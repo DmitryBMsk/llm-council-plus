@@ -1,0 +1,32 @@
+[project]
+name = "llm-council"
+version = "1.2.9"
+description = "Multi-LLM Council with democratic voting - Ask multiple AI models and let them evaluate each other"
+authors = [{name = "LLM Council Contributors"}]
+license = {text = "MIT"}
+keywords = ["llm", "ai", "council", "multiple-models", "openrouter", "chatbot"]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.27.0",
+    "pydantic>=2.9.0",
+    # Feature 2: Database support
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.13.0",
+    "psycopg2-binary>=2.9.0",  # PostgreSQL
+    "pymysql>=1.1.0",          # MySQL
+    # Feature 4: Tools (FREE)
+    "wikipedia>=1.4.0",
+    "arxiv>=2.0.0",
+    "duckduckgo-search>=4.0.0",
+    "yfinance>=0.2.0",
+    # Feature 4: Memory (local embeddings - FREE)
+    "chromadb>=0.4.0",
+    "sentence-transformers>=2.2.0",
+    # Optional LangChain integration
+    "langchain>=0.1.0",
+    "langchain-community>=0.0.20",
+]

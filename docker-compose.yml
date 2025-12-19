@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: llm-council-backend
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+      - path: .env.production
+        required: false
+    environment:
+      # Authentication
+      - AUTH_ENABLED=${AUTH_ENABLED:-false}
+      - AUTH_USERS=${AUTH_USERS:-{}}
+      - JWT_SECRET=${JWT_SECRET}
+      # Router configuration
+      - ROUTER_TYPE=${ROUTER_TYPE:-openrouter}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_API_URL=${OPENROUTER_API_URL:-https://openrouter.ai/api/v1/chat/completions}
+      - COUNCIL_MODELS=${COUNCIL_MODELS}
+      - CHAIRMAN_MODEL=${CHAIRMAN_MODEL}
+      - DATA_DIR=/app/data/conversations
+      - DEFAULT_TIMEOUT=${DEFAULT_TIMEOUT:-120.0}
+      - TITLE_GENERATION_TIMEOUT=${TITLE_GENERATION_TIMEOUT:-180.0}
+      - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID}
+      - GOOGLE_SERVICE_ACCOUNT_FILE=/app/credentials/google-service-account.json
+      # Tavily search (advanced web search)
+      - ENABLE_TAVILY=${ENABLE_TAVILY:-false}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+    volumes:
+      - ./data/conversations:/app/data/conversations
+      - ./credentials:/app/credentials:ro
+      - ./.env:/app/.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8001/api/version')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE=${VITE_API_BASE:-http://localhost:8001}
+    container_name: llm-council-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Optional nginx reverse proxy (HTTP-only by default)
+  nginx:
+    image: nginx:alpine
+    container_name: llm-council-proxy
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+    profiles:
+      - production
+
+volumes:
+  conversations:

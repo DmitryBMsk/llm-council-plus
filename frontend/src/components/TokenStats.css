@@ -1,0 +1,126 @@
+.token-stats {
+  position: relative;
+  display: inline-flex;
+  margin: 12px 0;
+}
+
+.token-stats-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, rgba(63, 185, 80, 0.15) 0%, rgba(63, 185, 80, 0.08) 100%);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+  border-radius: 20px;
+  cursor: help;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(63, 185, 80, 0.1);
+}
+
+.token-stats-badge:hover {
+  background: linear-gradient(135deg, rgba(63, 185, 80, 0.25) 0%, rgba(63, 185, 80, 0.15) 100%);
+  border-color: rgba(63, 185, 80, 0.5);
+  box-shadow: 0 4px 12px rgba(63, 185, 80, 0.2);
+  transform: translateY(-1px);
+}
+
+.token-icon {
+  color: var(--accent-green, #3fb950);
+  flex-shrink: 0;
+}
+
+.token-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-green, #3fb950);
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  white-space: nowrap;
+}
+
+.token-stats-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 100;
+  min-width: 320px;
+  background: var(--bg-secondary, #161b22);
+  border: 1px solid var(--border-primary, #30363d);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  animation: tooltipFadeIn 0.2s ease-out;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tooltip-header {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-green, #3fb950);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-primary, #30363d);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tooltip-header::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: var(--accent-green, #3fb950);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--accent-green, #3fb950);
+}
+
+.tooltip-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.tooltip-label {
+  font-size: 12px;
+  color: var(--text-secondary, #8b949e);
+  font-weight: 500;
+}
+
+.tooltip-value {
+  font-size: 12px;
+  color: var(--text-primary, #e6edf3);
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-weight: 600;
+}
+
+.tooltip-row:first-child .tooltip-label,
+.tooltip-row:first-child .tooltip-value {
+  font-weight: 700;
+  color: var(--accent-green, #3fb950);
+}
+
+.tooltip-footer {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-primary, #30363d);
+  font-size: 11px;
+  color: var(--text-secondary, #8b949e);
+  font-style: italic;
+}
