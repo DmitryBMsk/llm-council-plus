@@ -44,7 +44,7 @@ from .council import (
 )
 from .file_parser import parse_file, get_supported_extensions, is_image_file
 from .auth import LoginRequest, authenticate, validate_auth_token, validate_token, get_usernames, validate_jwt_config
-from .config import AUTH_ENABLED
+from .config import AUTH_ENABLED, MIN_CHAIRMAN_CONTEXT
 from .gdrive import upload_to_drive, get_drive_status, is_drive_configured
 from .database import init_database
 
@@ -624,6 +624,18 @@ async def create_conversation(
     current_user: str = Depends(get_current_user)
 ):
     """Create a new conversation. Requires authentication."""
+    # Validate chairman model context length if specified
+    if request.chairman and _models_cache.get("data"):
+        models = _models_cache["data"].get("models", [])
+        chairman_model = next((m for m in models if m["id"] == request.chairman), None)
+        if chairman_model:
+            context_length = chairman_model.get("contextLength", 0)
+            if context_length < MIN_CHAIRMAN_CONTEXT:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Chairman model {request.chairman} has insufficient context length ({context_length}). Minimum required: {MIN_CHAIRMAN_CONTEXT}"
+                )
+
     conversation_id = str(uuid.uuid4())
     # Use authenticated user if not specified in request
     username = request.username or current_user

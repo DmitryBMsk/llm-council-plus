@@ -9,6 +9,9 @@ const LAST_CHAIRMAN_KEY = 'llm-council-last-chairman';
 // Default max models (can be overridden by backend config)
 const DEFAULT_MAX_MODELS = 5;
 
+// Minimum context length required for Chairman model (25K tokens)
+const MIN_CHAIRMAN_CONTEXT = 25000;
+
 // Built-in presets (will be merged with dynamic "Last Used")
 const BUILT_IN_PRESETS = {
   ultra: {
@@ -297,9 +300,20 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
     setSelectedModels((prev) => prev.filter((id) => id !== modelId));
   };
 
+  // Check if a model can be used as Chairman (needs sufficient context)
+  const canBeChairman = useCallback((model) => {
+    if (!model) return false;
+    return (model.contextLength || 0) >= MIN_CHAIRMAN_CONTEXT;
+  }, []);
+
   const handleChairmanChange = (modelId, event) => {
     if (event) {
       event.stopPropagation();
+    }
+    // Check if model has sufficient context for Chairman role
+    const model = allModels.find((m) => m.id === modelId);
+    if (model && !canBeChairman(model)) {
+      return; // Don't allow selection
     }
     setActivePreset(null);
     setChairmanModel(modelId);
@@ -400,19 +414,27 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
               </span>
             </h3>
             <div className="selected-models-list">
-              {selectedModelObjects.map((model, index) => (
+              {selectedModelObjects.map((model, index) => {
+                const canChairman = canBeChairman(model);
+                const chipChairmanTitle = model.id === chairmanModel
+                  ? 'Current Chairman'
+                  : canChairman
+                    ? 'Set as Chairman'
+                    : `Context too small (${model.context}). Requires 25K+`;
+                return (
                 <div
                   key={model.id}
                   className={`selected-model-chip ${model.id === chairmanModel ? 'is-chairman' : ''}`}
                   onClick={() => scrollToModel(model.id)}
                 >
                   <button
-                    className={`chip-chairman-btn ${model.id === chairmanModel ? 'active' : ''}`}
+                    className={`chip-chairman-btn ${model.id === chairmanModel ? 'active' : ''} ${!canChairman ? 'disabled' : ''}`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleChairmanChange(model.id, e);
+                      if (canChairman) handleChairmanChange(model.id, e);
                     }}
-                    title={model.id === chairmanModel ? 'Current Chairman' : 'Set as Chairman'}
+                    title={chipChairmanTitle}
+                    disabled={!canChairman}
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill={model.id === chairmanModel ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
                       <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
@@ -434,7 +456,8 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
                     </svg>
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -539,6 +562,12 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
                 const isSelected = selectedModels.includes(model.id);
                 const isChairman = model.id === chairmanModel;
                 const isDisabled = !isSelected && isMaxReached;
+                const canChairman = canBeChairman(model);
+                const chairmanTitle = isChairman
+                  ? 'Current Chairman'
+                  : canChairman
+                    ? 'Set as Chairman'
+                    : `Context too small (${model.context}). Chairman requires 25K+ context`;
                 return (
                   <div
                     key={model.id}
@@ -558,7 +587,7 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
                       <div className="model-name">{model.name}</div>
                       <div className="model-provider">{model.provider}</div>
                       <div className="model-specs">
-                        <span className="spec context">{model.context} ctx</span>
+                        <span className={`spec context ${!canChairman ? 'context-warning' : ''}`}>{model.context} ctx</span>
                         <span className="spec input">{model.inputPrice} in</span>
                         <span className="spec output">{model.outputPrice} out</span>
                       </div>
@@ -566,9 +595,10 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
                     {model.isFree && <span className="free-badge">FREE</span>}
                     {model.supportsImages && <span className="vision-badge" title="Supports images">V</span>}
                     <button
-                      className={`chairman-btn ${isChairman ? 'active' : ''}`}
-                      onClick={(e) => handleChairmanChange(model.id, e)}
-                      title={isChairman ? 'Current Chairman' : 'Set as Chairman'}
+                      className={`chairman-btn ${isChairman ? 'active' : ''} ${!canChairman ? 'disabled' : ''}`}
+                      onClick={(e) => canChairman && handleChairmanChange(model.id, e)}
+                      title={chairmanTitle}
+                      disabled={!canChairman}
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill={isChairman ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
                         <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />

@@ -43,6 +43,9 @@ else:
 # Maximum council models (default 5, can be overridden via .env)
 MAX_COUNCIL_MODELS = int(os.getenv("MAX_COUNCIL_MODELS", "5"))
 
+# Minimum context length required for Chairman model (25K tokens)
+MIN_CHAIRMAN_CONTEXT = int(os.getenv("MIN_CHAIRMAN_CONTEXT", "25000"))
+
 # Chairman model - synthesizes final response
 CHAIRMAN_MODEL = os.getenv("CHAIRMAN_MODEL")
 if not CHAIRMAN_MODEL:
