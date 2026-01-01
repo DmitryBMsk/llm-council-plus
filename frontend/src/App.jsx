@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
 import ModelSelector from './components/ModelSelector';
 import LoginScreen from './components/LoginScreen';
 import SetupWizard from './components/SetupWizard';
+import { ToastContainer } from './components/Toast';
 import { useAuthStore } from './store/authStore';
 import { api } from './api';
 import { exportToMarkdown, generateFilename } from './utils/exportMarkdown';
@@ -21,7 +22,9 @@ function App() {
   const [setupRequired, setSetupRequired] = useState(false);
   const [setupChecked, setSetupChecked] = useState(false);
   const [webSearchAvailable, setWebSearchAvailable] = useState(false);
+  const [toasts, setToasts] = useState([]);
   const pendingMessageRef = useRef(null);
+  const toastIdRef = useRef(0);
 
   // Store streaming state per conversation to preserve intermediate results
   const streamingStateRef = useRef(new Map()); // Map<conversationId, {messages, isLoading}>
@@ -58,6 +61,16 @@ function App() {
       }));
     }
   };
+
+  // Toast notification helpers
+  const addToast = useCallback((message, type = 'error', duration = 6000) => {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev, { id, message, type, duration }]);
+  }, []);
+
+  const removeToast = useCallback((id) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
 
   // Auth state
   const { isSessionValid, login, username } = useAuthStore();
@@ -314,6 +327,19 @@ function App() {
 
           case 'stage1_model_response':
             // Add individual model response to stage1 array as it arrives
+            // Show toast notification for errors (timeout, rate limit, etc.)
+            if (event.data.error) {
+              const modelName = event.data.model.split('/')[1] || event.data.model;
+              const errorType = event.data.error_type || 'unknown';
+              const errorMessages = {
+                timeout: `${modelName}: Request timed out`,
+                rate_limit: `${modelName}: Rate limited`,
+                auth: `${modelName}: Authentication error`,
+                connection: `${modelName}: Connection error`,
+                empty: `${modelName}: Empty response`,
+              };
+              addToast(errorMessages[errorType] || `${modelName}: ${event.data.error_message || 'Error'}`, 'warning');
+            }
             updateStreamingState((prev) => {
               const lastIdx = prev.messages.length - 1;
               const lastMsg = prev.messages[lastIdx];
@@ -495,6 +521,7 @@ function App() {
 
           case 'error': {
             console.error('Stream error:', event.message);
+            addToast(`Stream error: ${event.message || 'Unknown error'}`, 'error');
             // Clear streaming state on error
             const streamingConvId = activeStreamingConvIdRef.current;
             if (streamingConvId) {
@@ -571,6 +598,7 @@ function App() {
         onClose={() => setShowModelSelector(false)}
         onConfirm={handleModelSelectionConfirm}
       />
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   );
 }
