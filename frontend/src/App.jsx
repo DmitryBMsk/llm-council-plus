@@ -31,35 +31,31 @@ function App() {
   const currentConversationIdRef = useRef(null);
 
   // Helper to update streaming conversation state (handles case when user switched away)
+  // FIX: Make ref the single source of truth, then sync React state from ref
   const updateStreamingState = (updater) => {
     const streamingConvId = activeStreamingConvIdRef.current;
     if (!streamingConvId) return;
 
-    // If we're still on the streaming conversation, update currentConversation
+    // ALWAYS update the ref first (single source of truth)
+    const storedState = streamingStateRef.current.get(streamingConvId);
+    if (!storedState) return;
+
+    const fakeConv = { messages: storedState.messages };
+    const updated = updater(fakeConv);
+    const newMessages = updated.messages;
+
+    streamingStateRef.current.set(streamingConvId, {
+      ...storedState,
+      messages: newMessages
+    });
+
+    // If we're still on the streaming conversation, sync React state from ref
     if (streamingConvId === currentConversationIdRef.current) {
-      setCurrentConversation(updater);
-      // Also update stored state so it's in sync
-      const storedState = streamingStateRef.current.get(streamingConvId);
-      if (storedState) {
-        const fakeConv = { messages: storedState.messages };
-        const updated = updater(fakeConv);
-        streamingStateRef.current.set(streamingConvId, {
-          ...storedState,
-          messages: updated.messages
-        });
-      }
-    } else {
-      // User switched away - update only the stored streaming state
-      const storedState = streamingStateRef.current.get(streamingConvId);
-      if (storedState) {
-        // Apply the updater to create new messages
-        const fakeConv = { messages: storedState.messages };
-        const updated = updater(fakeConv);
-        streamingStateRef.current.set(streamingConvId, {
-          ...storedState,
-          messages: updated.messages
-        });
-      }
+      // Use functional update but read from ref to ensure consistency
+      setCurrentConversation((prev) => ({
+        ...prev,
+        messages: newMessages
+      }));
     }
   };
 
