@@ -28,9 +28,19 @@ This fork extends [Andrej Karpathy's llm-council](https://github.com/karpathy/ll
 | **Web Search** | ❌ | ✅ Tavily + Exa AI integration |
 | **File Attachments** | ❌ | ✅ PDF, TXT, MD, images |
 | **Tools** | ❌ | ✅ Calculator, Wikipedia, ArXiv, Yahoo Finance |
-| **Real-time Streaming** | Basic | SSE with state persistence |
-| **Error Handling** | Silent failures | Visual error indicators per model |
+| **Real-time Streaming** | Basic | SSE with heartbeats & state persistence |
+| **Error Handling** | Silent failures | Toast notifications + visual indicators |
 | **Hot Reload** | ❌ | ✅ Config changes without restart |
+| **Conversation Search** | ❌ | ✅ Filter by title with relative dates |
+| **Stage Timeouts** | ❌ | ✅ 90s stage-level timeout (first-N-complete) |
+
+### Recent Updates (v1.3.0)
+
+- **Conversation Search** — Filter conversations by title in real-time
+- **Relative Dates** — Sidebar shows "Today 14:30", "Yesterday", "Mon", "Jan 2" etc.
+- **Stage-level Timeouts** — Stage 2/3 proceed after 90s with partial results (first-N-complete pattern)
+- **Toast Notifications** — Visual alerts for model timeouts and errors
+- **Improved Error Handling** — Graceful fallback when models fail or timeout
 
 ## Quick Start
 
