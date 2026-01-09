@@ -46,8 +46,9 @@ def test_runtime_settings_endpoints_roundtrip(tmp_path, monkeypatch):
         "stage1_prompt_template": "{full_query}",
         "stage2_prompt_template": "Question: {user_query}\n\n{responses_text}",
         "stage3_prompt_template": "Q: {user_query}\n\n{stage1_text}\n\n{rankings_block}",
+        # Should be ignored by the import endpoint.
+        "OPENROUTER_API_KEY": "should-not-be-accepted",
     }
     resp = client.post("/api/settings/import", json=import_payload)
     assert resp.status_code == 200
     assert resp.json()["council_temperature"] == 0.66
-

@@ -251,12 +251,16 @@ async def export_settings_endpoint(current_user: str = Depends(get_current_user)
 
 @app.post("/api/settings/import")
 async def import_settings_endpoint(
-    request: RuntimeSettings,
+    request: Dict[str, Any],
     current_user: str = Depends(get_current_user),
 ):
     """Import runtime settings from JSON (API keys are never part of this schema)."""
-    save_runtime_settings(request)
-    return request.model_dump()
+    # Defense in depth: accept any JSON object but persist only the RuntimeSettings allowlist.
+    allowed = set(RuntimeSettings.model_fields.keys())
+    sanitized = {k: v for k, v in (request or {}).items() if k in allowed}
+    settings = RuntimeSettings(**sanitized)
+    save_runtime_settings(settings)
+    return settings.model_dump()
 
 
 # ==================== Setup Wizard Endpoints ====================

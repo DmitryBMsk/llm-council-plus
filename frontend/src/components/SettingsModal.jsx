@@ -21,6 +21,33 @@ function downloadJson(filename, obj) {
   URL.revokeObjectURL(url);
 }
 
+const RUNTIME_SETTINGS_KEYS = [
+  'stage1_prompt_template',
+  'stage2_prompt_template',
+  'stage3_prompt_template',
+  'council_temperature',
+  'stage2_temperature',
+  'chairman_temperature',
+];
+
+function sanitizeRuntimeSettingsJson(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid settings file: expected a JSON object');
+  }
+
+  const droppedKeys = [];
+  const sanitized = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (!RUNTIME_SETTINGS_KEYS.includes(k)) {
+      droppedKeys.push(k);
+      continue;
+    }
+    sanitized[k] = v;
+  }
+
+  return { sanitized, droppedKeys };
+}
+
 export default function SettingsModal({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('prompts'); // prompts | temps | backup
   const [isLoading, setIsLoading] = useState(false);
@@ -106,7 +133,8 @@ export default function SettingsModal({ isOpen, onClose }) {
     setError('');
     try {
       const config = await api.exportRuntimeSettings();
-      downloadJson(`llm-council-settings-${new Date().toISOString().slice(0, 10)}.json`, config);
+      const { sanitized } = sanitizeRuntimeSettingsJson(config);
+      downloadJson(`llm-council-settings-${new Date().toISOString().slice(0, 10)}.json`, sanitized);
     } catch (e) {
       setError(e.message || 'Failed to export settings');
     }
@@ -124,10 +152,14 @@ export default function SettingsModal({ isOpen, onClose }) {
     try {
       const text = await file.text();
       const json = JSON.parse(text);
-      const updated = await api.importRuntimeSettings(json);
+      const { sanitized, droppedKeys } = sanitizeRuntimeSettingsJson(json);
+      if (droppedKeys.length) {
+        setSuccess(`Imported (ignored ${droppedKeys.length} unsupported keys)`);
+      }
+      const updated = await api.importRuntimeSettings(sanitized);
       setOriginal(updated);
       setDraft(updated);
-      setSuccess('Imported');
+      if (!droppedKeys.length) setSuccess('Imported');
       setTimeout(() => setSuccess(''), 1500);
     } catch (err) {
       setError(err.message || 'Import failed');
@@ -292,4 +324,3 @@ SettingsModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
 };
-
