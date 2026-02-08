@@ -9,7 +9,7 @@ def test_create_conversation_persists_router_type_in_json_storage(tmp_path, monk
     """
     from .. import storage
 
-    monkeypatch.setattr(storage, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(storage.config, "DATA_DIR", str(tmp_path))
 
     conversation_id = "00000000-0000-0000-0000-000000000110"
     created = storage.create_conversation(
@@ -38,7 +38,7 @@ def test_missing_router_type_is_inferred_from_models(tmp_path, monkeypatch):
     """
     from .. import storage
 
-    monkeypatch.setattr(storage, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(storage.config, "DATA_DIR", str(tmp_path))
 
     conversation_id = "00000000-0000-0000-0000-000000000111"
     path = storage.get_conversation_path(conversation_id)
@@ -62,4 +62,3 @@ def test_missing_router_type_is_inferred_from_models(tmp_path, monkeypatch):
     loaded = storage.get_conversation(conversation_id)
     assert loaded is not None
     assert loaded["router_type"] == "openrouter"
-

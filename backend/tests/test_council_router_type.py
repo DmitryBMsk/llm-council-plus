@@ -15,7 +15,7 @@ async def test_stage1_uses_router_type_for_parallel_calls(monkeypatch):
 
     # Avoid tools/memory paths in stage1
     monkeypatch.setattr(council, "requires_tools", lambda *_: False)
-    monkeypatch.setattr(council, "ENABLE_MEMORY", False)
+    monkeypatch.setattr(council.config, "ENABLE_MEMORY", False)
 
     await council.stage1_collect_responses(
         "hello",
@@ -46,7 +46,7 @@ async def test_stage1_streaming_uses_router_type(monkeypatch):
     monkeypatch.setattr(router_dispatch, "query_models_streaming", fake_streaming)
 
     monkeypatch.setattr(council, "requires_tools", lambda *_: False)
-    monkeypatch.setattr(council, "ENABLE_MEMORY", False)
+    monkeypatch.setattr(council.config, "ENABLE_MEMORY", False)
 
     items = []
     async for item in council.stage1_collect_responses_streaming(

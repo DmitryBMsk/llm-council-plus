@@ -5,7 +5,6 @@ import httpx
 import asyncio
 from typing import List, Dict, Any, Optional, Union
 from . import config
-from .config import DEFAULT_TIMEOUT, validate_openrouter_config
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +12,20 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 2  # Reduced to avoid long delays
 INITIAL_BACKOFF_SECONDS = 2.0  # Start with 2 second backoff
 MAX_BACKOFF_SECONDS = 30.0  # Cap at 30 seconds
+
+
+def _require_openrouter_api_key() -> None:
+    """
+    Ensure OpenRouter is configured.
+
+    Note: We validate the API key whenever this client is used, regardless of
+    global ROUTER_TYPE, because router selection can be per-conversation/request.
+    """
+    if not (config.OPENROUTER_API_KEY or "").strip():
+        raise ValueError(
+            "OPENROUTER_API_KEY is required when using the OpenRouter router. "
+            "Get your key at https://openrouter.ai/ or use ROUTER_TYPE=ollama for local models."
+        )
 
 
 def build_message_content(
@@ -77,11 +90,11 @@ async def query_model(
     Raises:
         ValueError: If OPENROUTER_API_KEY is not configured
     """
-    # Lazy validation - only check when actually making API calls
-    validate_openrouter_config()
+    # Lazy validation - only check when actually making API calls.
+    _require_openrouter_api_key()
 
     if timeout is None:
-        timeout = DEFAULT_TIMEOUT
+        timeout = config.DEFAULT_TIMEOUT
 
     if stage:
         logger.debug("[%s] Querying model: %s", stage, model)

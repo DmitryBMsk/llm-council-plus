@@ -77,7 +77,7 @@ def test_create_conversation_persists_execution_mode_in_json_storage(tmp_path, m
     """
     from .. import storage
 
-    monkeypatch.setattr(storage, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(storage.config, "DATA_DIR", str(tmp_path))
 
     conversation_id = "00000000-0000-0000-0000-000000000010"
     created = storage.create_conversation(

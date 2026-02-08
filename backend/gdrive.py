@@ -17,11 +17,7 @@ except ImportError:  # pragma: no cover
     build = None
     MediaIoBaseUpload = None
 
-from .config import (
-    GOOGLE_DRIVE_FOLDER_ID,
-    GOOGLE_SERVICE_ACCOUNT_FILE,
-    GOOGLE_DRIVE_ENABLED
-)
+from . import config
 
 
 # Scopes required for Google Drive file upload
@@ -41,7 +37,7 @@ def get_drive_service():
     if _drive_service is not None:
         return _drive_service
 
-    if not GOOGLE_DRIVE_ENABLED:
+    if not config.GOOGLE_DRIVE_ENABLED:
         raise ValueError("Google Drive is not configured. Set GOOGLE_DRIVE_FOLDER_ID in .env")
 
     if service_account is None or build is None or MediaIoBaseUpload is None:
@@ -50,14 +46,14 @@ def get_drive_service():
             "Install 'google-api-python-client' and 'google-auth' to enable Drive uploads."
         )
 
-    if not os.path.exists(GOOGLE_SERVICE_ACCOUNT_FILE):
+    if not os.path.exists(config.GOOGLE_SERVICE_ACCOUNT_FILE):
         raise FileNotFoundError(
-            f"Service account file not found: {GOOGLE_SERVICE_ACCOUNT_FILE}. "
+            f"Service account file not found: {config.GOOGLE_SERVICE_ACCOUNT_FILE}. "
             "Please download it from Google Cloud Console."
         )
 
     credentials = service_account.Credentials.from_service_account_file(
-        GOOGLE_SERVICE_ACCOUNT_FILE,
+        config.GOOGLE_SERVICE_ACCOUNT_FILE,
         scopes=SCOPES
     )
 
@@ -83,11 +79,11 @@ def upload_to_drive(
     Returns:
         Dict with file info including id, name, and webViewLink
     """
-    if not GOOGLE_DRIVE_ENABLED:
+    if not config.GOOGLE_DRIVE_ENABLED:
         raise ValueError("Google Drive is not configured")
 
     service = get_drive_service()
-    target_folder = folder_id or GOOGLE_DRIVE_FOLDER_ID
+    target_folder = folder_id or config.GOOGLE_DRIVE_FOLDER_ID
 
     # File metadata
     file_metadata = {
@@ -119,13 +115,13 @@ def upload_to_drive(
 
 def is_drive_configured() -> bool:
     """Check if Google Drive is properly configured."""
-    if not GOOGLE_DRIVE_ENABLED:
+    if not config.GOOGLE_DRIVE_ENABLED:
         return False
 
     if service_account is None or build is None or MediaIoBaseUpload is None:
         return False
 
-    if not os.path.exists(GOOGLE_SERVICE_ACCOUNT_FILE):
+    if not os.path.exists(config.GOOGLE_SERVICE_ACCOUNT_FILE):
         return False
 
     return True
@@ -134,7 +130,7 @@ def is_drive_configured() -> bool:
 def get_drive_status() -> Dict[str, Any]:
     """Get Google Drive configuration status."""
     return {
-        'enabled': GOOGLE_DRIVE_ENABLED,
+        'enabled': config.GOOGLE_DRIVE_ENABLED,
         'configured': is_drive_configured(),
-        'folder_id': GOOGLE_DRIVE_FOLDER_ID if GOOGLE_DRIVE_ENABLED else None
+        'folder_id': config.GOOGLE_DRIVE_FOLDER_ID if config.GOOGLE_DRIVE_ENABLED else None
     }

@@ -93,10 +93,8 @@ def safe_serialize(obj: Any) -> str:
         s = str(obj)
         # Replace invalid escape sequences with their unicode equivalents
         return s.encode('unicode_escape').decode('ascii')
-from .config import (
-    COUNCIL_MODELS, CHAIRMAN_MODEL, TITLE_GENERATION_TIMEOUT,
-    ENABLE_MEMORY
-)
+
+from . import config
 from .tools import get_available_tools
 from . import web_search as web_search_module
 from .memory import CouncilMemorySystem
@@ -267,7 +265,7 @@ async def optimize_search_query(
     Returns:
         Optimized search query string
     """
-    chairman_model = chairman if chairman else CHAIRMAN_MODEL
+    chairman_model = chairman if chairman else config.CHAIRMAN_MODEL
 
     prompt = f"""You are an expert at composing web search queries to find the latest and most relevant information.
 
@@ -589,7 +587,7 @@ Search Results:
             messages.insert(0, {"role": "system", "content": tool_text})
 
     # Add memory context if enabled (Feature 4)
-    if ENABLE_MEMORY and conversation_id:
+    if config.ENABLE_MEMORY and conversation_id:
         try:
             memory = CouncilMemorySystem(conversation_id)
             memory_ctx = memory.get_context(user_query)
@@ -599,7 +597,7 @@ Search Results:
             logger.warning("Memory context retrieval failed: %s", e)
 
     # Use provided models or fall back to default
-    council_models = models if models else COUNCIL_MODELS
+    council_models = models if models else config.COUNCIL_MODELS
     if not council_models:
         raise ValueError("No council models configured. Set COUNCIL_MODELS in .env or provide models in request.")
 
@@ -722,7 +720,7 @@ Search Results:
         logger.debug("[STAGE1-STREAM] Search context preview: %s...", tool_text[:500])
 
     # Add memory context if enabled (Feature 4)
-    if ENABLE_MEMORY and conversation_id:
+    if config.ENABLE_MEMORY and conversation_id:
         try:
             memory = CouncilMemorySystem(conversation_id)
             memory_ctx = memory.get_context(user_query)
@@ -732,7 +730,7 @@ Search Results:
             logger.warning("Memory context retrieval failed (streaming): %s", e)
 
     # Use provided models or fall back to default
-    council_models = models if models else COUNCIL_MODELS
+    council_models = models if models else config.COUNCIL_MODELS
     if not council_models:
         raise ValueError("No council models configured. Set COUNCIL_MODELS in .env or provide models in request.")
 
@@ -947,7 +945,7 @@ async def stage3_synthesize_final(
         Dict with 'model' and 'response' keys
     """
     # Use provided chairman or fall back to default
-    chairman_model = chairman if chairman else CHAIRMAN_MODEL
+    chairman_model = chairman if chairman else config.CHAIRMAN_MODEL
 
     # VALIDATION: Handle empty Stage 1 results
     if not stage1_results:
@@ -1197,9 +1195,9 @@ Title:"""
     # Increased timeout for Ollama models which may need time to load
     response = await router_dispatch.query_model(
         router_type,
-        model=CHAIRMAN_MODEL,
+        model=config.CHAIRMAN_MODEL,
         messages=messages,
-        timeout=TITLE_GENERATION_TIMEOUT,
+        timeout=config.TITLE_GENERATION_TIMEOUT,
         stage="TITLE",
     )
 
@@ -1270,7 +1268,7 @@ async def run_full_council(
     )
 
     # Save exchange to memory if enabled (Feature 4)
-    if ENABLE_MEMORY and conversation_id:
+    if config.ENABLE_MEMORY and conversation_id:
         try:
             memory = CouncilMemorySystem(conversation_id)
             memory.save_exchange(user_query, stage3_result.get("response", ""))

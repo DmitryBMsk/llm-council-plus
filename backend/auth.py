@@ -1,10 +1,11 @@
 """Authentication module for LLM Council with JWT + bcrypt."""
 
-import os
 import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
+
+from . import config
 
 try:  # pragma: no cover
     import bcrypt
@@ -19,13 +20,8 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 # JWT Configuration
-JWT_SECRET = os.getenv("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
 TOKEN_EXPIRE_DAYS = 60
-
-# Auth enabled flag - default FALSE for easy open source setup
-# Set AUTH_ENABLED=true in production with JWT_SECRET and AUTH_USERS
-AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() == "true"
 
 
 def validate_jwt_config():
@@ -35,7 +31,7 @@ def validate_jwt_config():
     Raises:
         ValueError: If AUTH_ENABLED=true but JWT_SECRET is not set
     """
-    if AUTH_ENABLED and not JWT_SECRET:
+    if config.AUTH_ENABLED and not config.JWT_SECRET:
         raise ValueError(
             "JWT_SECRET environment variable must be set when AUTH_ENABLED=true. "
             "Generate a secure secret with: openssl rand -base64 32"
@@ -55,14 +51,14 @@ def _init_users_from_env():
     Passwords are hashed with bcrypt at startup.
     """
     # If auth is disabled, don't require bcrypt or load users at import time.
-    if not AUTH_ENABLED:
+    if not config.AUTH_ENABLED:
         return
 
     if bcrypt is None:
         logger.error("AUTH_ENABLED=true but bcrypt is not installed. Install bcrypt to enable authentication.")
         return
 
-    auth_users_json = os.getenv("AUTH_USERS", "{}")
+    auth_users_json = config.AUTH_USERS or "{}"
 
     try:
         users_config = json.loads(auth_users_json)
@@ -167,7 +163,7 @@ def create_token(username: str) -> tuple[str, int]:
     """
     if jwt is None:
         raise RuntimeError("PyJWT is required for token creation; install PyJWT to enable authentication.")
-    if not JWT_SECRET:
+    if not config.JWT_SECRET:
         raise ValueError("JWT_SECRET environment variable must be set")
 
     now = datetime.now(timezone.utc)
@@ -179,7 +175,7 @@ def create_token(username: str) -> tuple[str, int]:
         "exp": expires,
     }
 
-    token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    token = jwt.encode(payload, config.JWT_SECRET, algorithm=JWT_ALGORITHM)
     expires_at_ms = int(expires.timestamp() * 1000)
 
     return token, expires_at_ms
@@ -198,12 +194,12 @@ def validate_token(token: str) -> Optional[str]:
     if jwt is None:
         logger.error("PyJWT not installed - authentication disabled")
         return None
-    if not JWT_SECRET:
+    if not config.JWT_SECRET:
         logger.error("JWT_SECRET not configured")
         return None
 
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, config.JWT_SECRET, algorithms=[JWT_ALGORITHM])
         username = payload.get("sub")
 
         if username and username in USERS:
@@ -234,7 +230,7 @@ def authenticate(username: str, password: str) -> LoginResponse:
     Returns:
         LoginResponse with success status and JWT token if successful
     """
-    if not AUTH_ENABLED:
+    if not config.AUTH_ENABLED:
         return LoginResponse(
             success=False,
             error="Authentication is disabled"
@@ -246,7 +242,7 @@ def authenticate(username: str, password: str) -> LoginResponse:
             error="Username and password are required"
         )
 
-    if not JWT_SECRET:
+    if not config.JWT_SECRET:
         logger.error("JWT_SECRET not configured - authentication disabled")
         return LoginResponse(
             success=False,
@@ -301,20 +297,11 @@ def reload_auth():
     Reload authentication configuration from environment.
     Call this after updating .env via setup wizard.
     """
-    global JWT_SECRET, AUTH_ENABLED, USERS
-
-    # Reload from environment (dotenv should have been reloaded first)
-    from dotenv import load_dotenv
-    load_dotenv(override=True)
-
-    JWT_SECRET = os.getenv("JWT_SECRET")
-    AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() == "true"
-
     # Clear and reload users
     USERS.clear()
     _init_users_from_env()
 
-    logger.info(f"Auth reloaded: AUTH_ENABLED={AUTH_ENABLED}, users={len(USERS)}")
+    logger.info("Auth reloaded: AUTH_ENABLED=%s, users=%d", config.AUTH_ENABLED, len(USERS))
 
 
 def validate_auth_token(token: str) -> ValidateResponse:

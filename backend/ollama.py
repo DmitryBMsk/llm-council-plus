@@ -3,7 +3,7 @@
 import logging
 import httpx
 from typing import List, Dict, Any, Union, TypedDict, Literal
-from .config import OLLAMA_HOST, DEFAULT_TIMEOUT
+from . import config
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +50,9 @@ async def query_model(
         Error types: 'connection', 'not_found', 'http', 'timeout', 'unknown'
     """
     if timeout is None:
-        timeout = DEFAULT_TIMEOUT
+        timeout = config.DEFAULT_TIMEOUT
     
-    url = f"http://{OLLAMA_HOST}/api/chat"
+    url = f"http://{config.OLLAMA_HOST}/api/chat"
     
     payload = {
         "model": model,
@@ -79,11 +79,11 @@ async def query_model(
             }
 
     except httpx.ConnectError as e:
-        logger.error("Connection error querying model %s: Cannot connect to Ollama at %s. Is Ollama running? Error: %s", model, OLLAMA_HOST, e)
+        logger.error("Connection error querying model %s: Cannot connect to Ollama at %s. Is Ollama running? Error: %s", model, config.OLLAMA_HOST, e)
         return {
             'error': True,
             'error_type': 'connection',
-            'error_message': f'Cannot connect to Ollama at {OLLAMA_HOST}. Is Ollama running?'
+            'error_message': f'Cannot connect to Ollama at {config.OLLAMA_HOST}. Is Ollama running?'
         }
     except httpx.HTTPStatusError as e:
         logger.error("HTTP error querying model %s: Status %s. Response: %s", model, e.response.status_code, e.response.text)

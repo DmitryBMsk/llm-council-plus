@@ -69,6 +69,9 @@ MYSQL_URL = os.getenv("MYSQL_URL", "")
 
 # Authentication configuration - default FALSE for easy open source setup
 AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() == "true"
+JWT_SECRET = os.getenv("JWT_SECRET")
+# User store (JSON string) for AUTH_ENABLED=true. Example: {"Alex":"pass","Bob":"pass"}.
+AUTH_USERS = os.getenv("AUTH_USERS", "{}")
 
 # Tools & Memory configuration (Feature 4)
 ENABLE_TAVILY = os.getenv("ENABLE_TAVILY", "false").lower() == "true"
@@ -97,14 +100,17 @@ if ROUTER_TYPE not in ["openrouter", "ollama"]:
     )
 
 
-def validate_openrouter_config():
+def validate_openrouter_config(router_type: str | None = None):
     """
     Validate OpenRouter configuration (called lazily when making API calls).
 
     Raises:
         ValueError: If using OpenRouter without API key
     """
-    if ROUTER_TYPE == "openrouter" and not OPENROUTER_API_KEY:
+    # Note: router selection can be per-conversation/request, so don't rely solely
+    # on the module-global ROUTER_TYPE.
+    rt = (router_type or ROUTER_TYPE or "openrouter").lower()
+    if rt == "openrouter" and not OPENROUTER_API_KEY:
         raise ValueError(
             "OPENROUTER_API_KEY is required when ROUTER_TYPE=openrouter. "
             "Get your key at https://openrouter.ai/ or use ROUTER_TYPE=ollama for local models."
@@ -118,7 +124,7 @@ def reload_config():
     """
     global ROUTER_TYPE, OPENROUTER_API_KEY, OPENROUTER_API_URL
     global OLLAMA_HOST, COUNCIL_MODELS, CHAIRMAN_MODEL
-    global AUTH_ENABLED, ENABLE_TAVILY, TAVILY_API_KEY
+    global AUTH_ENABLED, JWT_SECRET, AUTH_USERS, ENABLE_TAVILY, TAVILY_API_KEY
     global ENABLE_EXA, EXA_API_KEY, ENABLE_BRAVE, BRAVE_API_KEY
     global ENABLE_OPENAI_EMBEDDINGS, OPENAI_API_KEY
     global ENABLE_MEMORY, ENABLE_LANGGRAPH
@@ -186,6 +192,8 @@ def reload_config():
 
     # Authentication
     AUTH_ENABLED = os.getenv("AUTH_ENABLED", "false").lower() == "true"
+    JWT_SECRET = os.getenv("JWT_SECRET")
+    AUTH_USERS = os.getenv("AUTH_USERS", "{}")
 
     # Tools & Memory
     ENABLE_TAVILY = os.getenv("ENABLE_TAVILY", "false").lower() == "true"

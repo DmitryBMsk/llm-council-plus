@@ -44,7 +44,7 @@ from .council import (
 )
 from .file_parser import parse_file, get_supported_extensions, is_image_file
 from .auth import LoginRequest, authenticate, validate_auth_token, validate_token, get_usernames, validate_jwt_config
-from .config import AUTH_ENABLED, MIN_CHAIRMAN_CONTEXT, ROUTER_TYPE
+from . import config
 from .gdrive import upload_to_drive, get_drive_status, is_drive_configured
 from .database import init_database
 from .runtime_settings import (
@@ -71,7 +71,7 @@ async def get_current_user(
     When AUTH_ENABLED=false, returns 'guest' without validation.
     """
     # Skip authentication when disabled
-    if not AUTH_ENABLED:
+    if not config.AUTH_ENABLED:
         return "guest"
 
     if not credentials:
@@ -289,26 +289,20 @@ async def get_setup_status():
     Returns setup_required=true if API key is missing for OpenRouter mode.
     Also returns web_search_enabled for frontend to show/hide web search option.
     """
-    from .config import (
-        ROUTER_TYPE, OPENROUTER_API_KEY,
-        ENABLE_TAVILY, TAVILY_API_KEY,
-        ENABLE_EXA, EXA_API_KEY,
-        ENABLE_BRAVE, BRAVE_API_KEY,
-    )
     from .web_search import duckduckgo_available
 
-    needs_setup = ROUTER_TYPE == "openrouter" and not OPENROUTER_API_KEY
+    needs_setup = config.ROUTER_TYPE == "openrouter" and not config.OPENROUTER_API_KEY
     # Web search is enabled if either Tavily or Exa is configured
-    tavily_enabled = ENABLE_TAVILY and bool(TAVILY_API_KEY)
-    exa_enabled = ENABLE_EXA and bool(EXA_API_KEY)
-    brave_enabled = ENABLE_BRAVE and bool(BRAVE_API_KEY)
+    tavily_enabled = config.ENABLE_TAVILY and bool(config.TAVILY_API_KEY)
+    exa_enabled = config.ENABLE_EXA and bool(config.EXA_API_KEY)
+    brave_enabled = config.ENABLE_BRAVE and bool(config.BRAVE_API_KEY)
     duckduckgo_enabled = duckduckgo_available()
     web_search_enabled = tavily_enabled or exa_enabled or brave_enabled or duckduckgo_enabled
 
     return {
         "setup_required": needs_setup,
-        "router_type": ROUTER_TYPE,
-        "has_api_key": bool(OPENROUTER_API_KEY),
+        "router_type": config.ROUTER_TYPE,
+        "has_api_key": bool(config.OPENROUTER_API_KEY),
         "web_search_enabled": web_search_enabled,
         "duckduckgo_enabled": duckduckgo_enabled,
         "tavily_enabled": tavily_enabled,
@@ -347,8 +341,6 @@ async def save_setup_config(request: SetupConfigRequest):
     This endpoint is only available when setup is required (first run).
     After initial setup, this endpoint is disabled for security.
     """
-    from .config import ROUTER_TYPE, OPENROUTER_API_KEY
-    import os
     from pathlib import Path
 
     # Find .env file location
@@ -356,7 +348,7 @@ async def save_setup_config(request: SetupConfigRequest):
 
     # Security check: Only allow setup when not yet configured
     # Check for SETUP_COMPLETE flag or existing valid configuration
-    if ROUTER_TYPE == "openrouter" and OPENROUTER_API_KEY:
+    if config.ROUTER_TYPE == "openrouter" and config.OPENROUTER_API_KEY:
         raise HTTPException(
             status_code=403,
             detail="Application is already configured. Edit .env file manually to change settings."
@@ -456,9 +448,8 @@ async def save_setup_config(request: SetupConfigRequest):
         os.environ[key] = value
 
     # Reload config and auth modules to pick up new values in memory
-    from .config import reload_config
     from .auth import reload_auth
-    reload_config()
+    config.reload_config()
     reload_auth()
 
     return {
@@ -572,9 +563,7 @@ async def get_available_models(router_type: Optional[str] = None):
     Returns formatted model list with pricing and capabilities.
     Cached for 5 minutes to reduce API calls.
     """
-    from .config import OPENROUTER_API_KEY, OLLAMA_HOST, MIN_CHAIRMAN_CONTEXT
-
-    effective_router_type = (router_type or ROUTER_TYPE or "openrouter").lower()
+    effective_router_type = (router_type or config.ROUTER_TYPE or "openrouter").lower()
     if effective_router_type not in {"openrouter", "ollama"}:
         raise HTTPException(status_code=400, detail="Invalid router_type. Must be 'openrouter' or 'ollama'.")
 
@@ -588,7 +577,7 @@ async def get_available_models(router_type: Optional[str] = None):
         # Fetch from Ollama local API
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(f"http://{OLLAMA_HOST}/api/tags", timeout=10.0)
+                response = await client.get(f"http://{config.OLLAMA_HOST}/api/tags", timeout=10.0)
                 if response.status_code != 200:
                     raise HTTPException(status_code=503, detail="Failed to fetch Ollama models")
 
@@ -600,7 +589,7 @@ async def get_available_models(router_type: Optional[str] = None):
                         "name": model["name"],
                         "provider": "Ollama (Local)",
                         "context": "N/A",
-                        "contextLength": MIN_CHAIRMAN_CONTEXT,
+                        "contextLength": config.MIN_CHAIRMAN_CONTEXT,
                         "inputPrice": "FREE",
                         "outputPrice": "FREE",
                         "tier": "free",
@@ -609,8 +598,7 @@ async def get_available_models(router_type: Optional[str] = None):
                         "modality": "text->text",
                     })
 
-                from .config import MAX_COUNCIL_MODELS
-                result = {"models": models, "router_type": "ollama", "max_models": MAX_COUNCIL_MODELS}
+                result = {"models": models, "router_type": "ollama", "max_models": config.MAX_COUNCIL_MODELS}
                 async with _get_models_cache_lock():
                     _models_cache[effective_router_type] = {"data": result, "timestamp": time.time()}
                 return result
@@ -620,7 +608,7 @@ async def get_available_models(router_type: Optional[str] = None):
 
     else:
         # Fetch from OpenRouter API
-        if not OPENROUTER_API_KEY:
+        if not config.OPENROUTER_API_KEY:
             raise HTTPException(
                 status_code=503,
                 detail="OpenRouter API key not configured. Complete setup first."
@@ -630,7 +618,7 @@ async def get_available_models(router_type: Optional[str] = None):
             async with httpx.AsyncClient() as client:
                 response = await client.get(
                     "https://openrouter.ai/api/v1/models",
-                    headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
+                    headers={"Authorization": f"Bearer {config.OPENROUTER_API_KEY}"},
                     timeout=30.0
                 )
 
@@ -685,8 +673,7 @@ async def get_available_models(router_type: Optional[str] = None):
                 # Sort by output price (cheapest first), then by name
                 models.sort(key=lambda m: (m["outputPriceRaw"], m["name"]))
 
-                from .config import MAX_COUNCIL_MODELS
-                result = {"models": models, "router_type": "openrouter", "count": len(models), "max_models": MAX_COUNCIL_MODELS}
+                result = {"models": models, "router_type": "openrouter", "count": len(models), "max_models": config.MAX_COUNCIL_MODELS}
                 async with _get_models_cache_lock():
                     _models_cache[effective_router_type] = {"data": result, "timestamp": time.time()}
                 return result
@@ -739,7 +726,7 @@ async def get_users():
     When auth is enabled, returns empty list to prevent exposing configured usernames.
     In production, users must enter username manually.
     """
-    if AUTH_ENABLED:
+    if config.AUTH_ENABLED:
         return {"users": []}  # Don't expose usernames in production
     return {"users": get_usernames()}
 
@@ -751,9 +738,7 @@ async def get_auth_status():
     Public endpoint - returns whether auth is enabled.
     Frontend uses this to decide whether to show login screen.
     """
-    # Import dynamically to get fresh value after hot reload
-    from .config import AUTH_ENABLED as current_auth_enabled
-    return {"auth_enabled": current_auth_enabled}
+    return {"auth_enabled": config.AUTH_ENABLED}
 
 
 # ==================== Conversation Endpoints ====================
@@ -771,7 +756,7 @@ async def create_conversation(
 ):
     """Create a new conversation. Requires authentication."""
     # Validate chairman model context length if specified
-    router_type = (getattr(request, "router_type", None) or ROUTER_TYPE or "openrouter").strip().lower()
+    router_type = (getattr(request, "router_type", None) or config.ROUTER_TYPE or "openrouter").strip().lower()
     async with _get_models_cache_lock():
         cache_entry = _models_cache.get(router_type)
     if request.chairman and cache_entry and cache_entry.get("data"):
@@ -779,10 +764,13 @@ async def create_conversation(
         chairman_model = next((m for m in models if m["id"] == request.chairman), None)
         if chairman_model:
             context_length = chairman_model.get("contextLength", 0)
-            if context_length < MIN_CHAIRMAN_CONTEXT:
+            if context_length < config.MIN_CHAIRMAN_CONTEXT:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Chairman model {request.chairman} has insufficient context length ({context_length}). Minimum required: {MIN_CHAIRMAN_CONTEXT}"
+                    detail=(
+                        f"Chairman model {request.chairman} has insufficient context length "
+                        f"({context_length}). Minimum required: {config.MIN_CHAIRMAN_CONTEXT}"
+                    ),
                 )
 
     conversation_id = str(uuid.uuid4())
@@ -1102,9 +1090,9 @@ async def send_message_stream(
     conv_models = conversation.get("models")
     conv_chairman = conversation.get("chairman")
     execution_mode = (conversation.get("execution_mode") or "full").strip().lower()
-    router_type = (conversation.get("router_type") or ROUTER_TYPE or "openrouter").strip().lower()
+    router_type = (conversation.get("router_type") or config.ROUTER_TYPE or "openrouter").strip().lower()
     if router_type not in {"openrouter", "ollama"}:
-        router_type = ROUTER_TYPE
+        router_type = config.ROUTER_TYPE
     if execution_mode not in {"chat_only", "chat_ranking", "full"}:
         execution_mode = "full"
 
