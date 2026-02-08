@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     gosu \
+    curl \
     && rm -rf /var/lib/apt/lists/* \
     && gosu nobody true
 
@@ -13,9 +14,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN groupadd --gid 1000 appgroup \
     && useradd --uid 1000 --gid appgroup --shell /bin/bash --create-home appuser
 
-# Copy requirements first for better caching
-COPY backend/requirements.txt /app/backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+# Install uv (used only at build time to export deps from uv.lock)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Copy lockfiles first for better caching
+COPY pyproject.toml uv.lock /app/
+
+# Export locked runtime dependencies (no dev group) and install via pip.
+# We intentionally avoid emitting the project itself in requirements.
+RUN uv export \
+      --format requirements.txt \
+      --frozen \
+      --no-dev \
+      --no-hashes \
+      --no-emit-project \
+      -o /tmp/requirements.txt \
+    && pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Copy VERSION file to /app
 COPY VERSION /app/VERSION
