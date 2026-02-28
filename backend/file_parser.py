@@ -140,7 +140,7 @@ def parse_file(filename: str, file_content: bytes) -> Tuple[str, str]:
         return parse_pdf(file_content), 'pdf'
     elif filename_lower.endswith('.txt'):
         return parse_txt(file_content), 'txt'
-    elif filename_lower.endswith('.md'):
+    elif filename_lower.endswith('.md') or filename_lower.endswith('.mdx'):
         return parse_md(file_content), 'md'
     else:
         raise ValueError(f"Unsupported file type: {filename}")
@@ -148,4 +148,4 @@ def parse_file(filename: str, file_content: bytes) -> Tuple[str, str]:
 
 def get_supported_extensions() -> list:
     """Return list of supported file extensions."""
-    return ['.pdf', '.txt', '.md'] + IMAGE_EXTENSIONS
+    return ['.pdf', '.txt', '.md', '.mdx'] + IMAGE_EXTENSIONS

@@ -461,6 +461,50 @@
   box-shadow: 0 4px 16px rgba(63, 185, 80, 0.4);
 }
 
+/* Drag-and-drop overlay */
+.chat-interface.drag-over {
+  position: relative;
+}
+
+.drag-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background: rgba(88, 166, 255, 0.08);
+  border: 2px dashed var(--accent-blue);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.drag-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--accent-blue);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.drag-overlay-content svg {
+  opacity: 0.8;
+}
+
+.drag-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
 /* File upload styles */
 .input-row {
   display: flex;

@@ -1,4 +1,4 @@
-"""Configuration for the LLM Council."""
+"""Configuration for LLM-TTCC-TEAM-PRO."""
 
 import os
 from dotenv import load_dotenv

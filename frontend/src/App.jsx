@@ -200,9 +200,9 @@ function App() {
     setShowModelSelector(true);
   };
 
-  const handleModelSelectionConfirm = async ({ models, chairman, executionMode, routerType }) => {
+  const handleModelSelectionConfirm = async ({ models, chairman, executionMode, routerType, systemPrompt }) => {
     try {
-      const newConv = await api.createConversation({ models, chairman, executionMode, routerType, username });
+      const newConv = await api.createConversation({ models, chairman, executionMode, routerType, username, systemPrompt });
       setConversations([
         {
           id: newConv.id,

@@ -144,6 +144,7 @@ def _json_create_conversation(
     username: Optional[str] = None,
     execution_mode: Optional[str] = None,
     router_type: Optional[str] = None,
+    system_prompt: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Create conversation in JSON file with exclusive lock."""
     ensure_data_dir()
@@ -158,6 +159,7 @@ def _json_create_conversation(
         "username": username,
         "execution_mode": execution_mode,
         "router_type": router_type,
+        "system_prompt": system_prompt,
     }
 
     path = get_conversation_path(conversation_id)
@@ -278,11 +280,12 @@ def _db_create_conversation(
     username: Optional[str] = None,
     execution_mode: Optional[str] = None,
     router_type: Optional[str] = None,
+    system_prompt: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Create conversation in database."""
     models_payload: Any = models
-    if execution_mode is not None or router_type is not None:
-        models_payload = {"models": models, "execution_mode": execution_mode, "router_type": router_type}
+    if execution_mode is not None or router_type is not None or system_prompt is not None:
+        models_payload = {"models": models, "execution_mode": execution_mode, "router_type": router_type, "system_prompt": system_prompt}
 
     db = SessionLocal()
     try:
@@ -403,6 +406,7 @@ def create_conversation(
     username: Optional[str] = None,
     execution_mode: Optional[str] = None,
     router_type: Optional[str] = None,
+    system_prompt: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create a new conversation.
@@ -412,14 +416,15 @@ def create_conversation(
         models: Optional list of council model IDs
         chairman: Optional chairman/judge model ID
         username: Optional username of the user who created the conversation
+        system_prompt: Optional system prompt for the conversation (e.g., TTCC mode)
 
     Returns:
         New conversation dict
     """
     if is_using_database():
-        conv = _db_create_conversation(conversation_id, models, chairman, username, execution_mode, router_type)
+        conv = _db_create_conversation(conversation_id, models, chairman, username, execution_mode, router_type, system_prompt)
     else:
-        conv = _json_create_conversation(conversation_id, models, chairman, username, execution_mode, router_type)
+        conv = _json_create_conversation(conversation_id, models, chairman, username, execution_mode, router_type, system_prompt)
 
     return _normalize_conversation(conv)
 
@@ -482,6 +487,7 @@ def _normalize_conversation(conversation: Optional[Dict[str, Any]]) -> Optional[
         conversation = conversation.copy()
         conversation["execution_mode"] = conversation.get("execution_mode") or models.get("execution_mode")
         conversation["router_type"] = conversation.get("router_type") or models.get("router_type")
+        conversation["system_prompt"] = conversation.get("system_prompt") or models.get("system_prompt")
         conversation["models"] = models.get("models")
 
     # Backwards compatibility: infer router_type if missing.

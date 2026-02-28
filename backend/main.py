@@ -1,4 +1,4 @@
-"""FastAPI backend for LLM Council."""
+"""FastAPI backend for LLM-TTCC-TEAM-PRO."""
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,7 +56,7 @@ from .runtime_settings import (
     save_runtime_settings,
 )
 
-app = FastAPI(title="LLM Council API")
+app = FastAPI(title="LLM-TTCC-TEAM-PRO API")
 
 # Security scheme for protected endpoints
 security = HTTPBearer(auto_error=False)
@@ -131,6 +131,7 @@ class CreateConversationRequest(BaseModel):
     username: Optional[str] = Field(default=None, max_length=50)  # User who created the conversation
     execution_mode: Optional[str] = Field(default=None, pattern="^(chat_only|chat_ranking|full)$")
     router_type: Optional[str] = Field(default=None, pattern="^(openrouter|ollama)$")
+    system_prompt: Optional[str] = Field(default=None, max_length=200_000)  # Custom system prompt (e.g., TTCC mode)
 
 
 class FileAttachment(BaseModel):
@@ -186,6 +187,7 @@ class Conversation(BaseModel):
     chairman: Optional[str] = None
     username: Optional[str] = None
     execution_mode: Optional[str] = None
+    system_prompt: Optional[str] = None
 
 
 class UpdateRuntimeSettingsRequest(BaseModel):
@@ -207,7 +209,7 @@ class UpdateRuntimeSettingsRequest(BaseModel):
 @app.get("/")
 async def root():
     """Health check endpoint."""
-    return {"status": "ok", "service": "LLM Council API", "version": VERSION}
+    return {"status": "ok", "service": "LLM-TTCC-TEAM-PRO API", "version": VERSION}
 
 
 @app.get("/api/version")
@@ -332,6 +334,44 @@ async def generate_secret(type: str = "jwt"):
         return {"secret": password, "type": "password"}
     else:
         raise HTTPException(status_code=400, detail="Invalid type. Use 'jwt' or 'password'")
+
+
+@app.get("/api/system-prompt-presets")
+async def get_system_prompt_presets():
+    """
+    Return available system prompt presets (e.g., TTCC mode).
+    Reads the TTCC system prompt from the bundled file.
+    """
+    presets = [{"id": "general", "name": "General (No System Prompt)", "prompt": None}]
+
+    # Load TTCC system prompt from file
+    ttcc_paths = [
+        Path(__file__).parent.parent / "Technical_Training_Course_Creator_System_Prompt.md",
+        Path(__file__).parent / "Technical_Training_Course_Creator_System_Prompt.md",
+    ]
+    for ttcc_path in ttcc_paths:
+        if ttcc_path.exists():
+            try:
+                raw_content = ttcc_path.read_text(encoding="utf-8")
+                # Extract only the content between <SYSTEM_PROMPT_START> and <SYSTEM_PROMPT_END>
+                start_marker = "<SYSTEM_PROMPT_START>"
+                end_marker = "<SYSTEM_PROMPT_END>"
+                start_idx = raw_content.find(start_marker)
+                end_idx = raw_content.find(end_marker)
+                if start_idx != -1 and end_idx != -1:
+                    prompt_content = raw_content[start_idx + len(start_marker):end_idx].strip()
+                else:
+                    prompt_content = raw_content
+                presets.append({
+                    "id": "ttcc",
+                    "name": "Technical Training Course Creator (TTCC)",
+                    "prompt": prompt_content,
+                })
+            except Exception as e:
+                logger.warning("Failed to load TTCC system prompt: %s", e)
+            break
+
+    return {"presets": presets}
 
 
 @app.post("/api/setup/config")
@@ -783,6 +823,7 @@ async def create_conversation(
         username=username,
         execution_mode=request.execution_mode or "full",
         router_type=router_type,
+        system_prompt=request.system_prompt,
     )
     return conversation
 
@@ -848,7 +889,7 @@ async def upload_file(
     current_user: str = Depends(get_current_user)
 ):
     """
-    Upload and parse a file (PDF, TXT, MD, or images). Requires authentication.
+    Upload and parse a file (PDF, TXT, MD, MDX, or images). Requires authentication.
     Returns the parsed content that can be attached to a message.
     For images, returns base64 data URI.
     """
@@ -1086,9 +1127,10 @@ async def send_message_stream(
     # Get conversation history for context (before adding new message)
     conversation_history = conversation["messages"]
 
-    # Get custom models and chairman from conversation (if set)
+    # Get custom models, chairman, and system prompt from conversation (if set)
     conv_models = conversation.get("models")
     conv_chairman = conversation.get("chairman")
+    conv_system_prompt = conversation.get("system_prompt")
     execution_mode = (conversation.get("execution_mode") or "full").strip().lower()
     router_type = (conversation.get("router_type") or config.ROUTER_TYPE or "openrouter").strip().lower()
     if router_type not in {"openrouter", "ollama"}:
@@ -1142,6 +1184,7 @@ async def send_message_stream(
                     web_search_provider=web_search_provider,
                     chairman=conv_chairman,
                     router_type=router_type,
+                    system_prompt=conv_system_prompt,
                 ):
                     # Handle tool_outputs message (first yield if tools were used)
                     if item.get("type") == "tool_outputs":

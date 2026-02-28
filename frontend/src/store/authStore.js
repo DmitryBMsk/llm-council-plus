@@ -51,7 +51,7 @@ export const useAuthStore = create(
       },
     }),
     {
-      name: 'llm-council-auth',
+      name: 'llm-ttcc-team-pro-auth',
       partialize: (state) => ({
         isAuthenticated: state.isAuthenticated,
         username: state.username,

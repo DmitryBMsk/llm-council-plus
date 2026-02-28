@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    container_name: llm-council-backend
+    container_name: llm-ttcc-team-pro-backend
     ports:
       - "8001:8001"
     env_file:
@@ -52,7 +52,7 @@ services:
       dockerfile: Dockerfile
       args:
         - VITE_API_BASE=${VITE_API_BASE:-http://localhost:8001}
-    container_name: llm-council-frontend
+    container_name: llm-ttcc-team-pro-frontend
     ports:
       - "80:80"
     depends_on:
@@ -62,7 +62,7 @@ services:
   # Optional nginx reverse proxy (HTTP-only by default)
   nginx:
     image: nginx:alpine
-    container_name: llm-council-proxy
+    container_name: llm-ttcc-team-pro-proxy
     ports:
       - "8080:80"
     volumes:

@@ -83,6 +83,7 @@ export default function ChatInterface({
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [webSearchProvider, setWebSearchProvider] = useState('off'); // 'off', 'duckduckgo', 'tavily', 'exa', 'brave'
   const [driveStatus, setDriveStatus] = useState({ enabled: false, configured: false });
   const [driveUploading, setDriveUploading] = useState({});
@@ -97,6 +98,17 @@ export default function ChatInterface({
       .then(setDriveStatus)
       .catch((err) => console.log('Drive not configured:', err));
   }, []);
+
+  // Auto-enable web search for TTCC mode conversations
+  useEffect(() => {
+    if (conversation?.system_prompt && webSearchProvider === 'off') {
+      // Auto-select the first available search provider
+      if (duckduckgoEnabled) setWebSearchProvider('duckduckgo');
+      else if (tavilyEnabled) setWebSearchProvider('tavily');
+      else if (exaEnabled) setWebSearchProvider('exa');
+      else if (braveEnabled) setWebSearchProvider('brave');
+    }
+  }, [conversation?.id]); // Only trigger on conversation change
 
   // Upload to Google Drive
   const uploadToDrive = async (index, userContent, assistantMessage) => {
@@ -209,11 +221,85 @@ export default function ChatInterface({
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // Drag-and-drop handlers
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isLoading && !isUploading) {
+      setIsDragOver(true);
+    }
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    if (isLoading || isUploading) return;
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+
+    // Filter to supported file types
+    const supportedExtensions = ['.pdf', '.txt', '.md', '.mdx', '.jpg', '.jpeg', '.png', '.gif', '.webp'];
+    const supportedFiles = files.filter((file) => {
+      const ext = '.' + file.name.split('.').pop().toLowerCase();
+      return supportedExtensions.includes(ext);
+    });
+
+    if (supportedFiles.length === 0) {
+      alert('No supported files found. Supported: PDF, TXT, MD, MDX, JPG, PNG, GIF, WebP');
+      return;
+    }
+
+    // Validate file sizes
+    const invalidFiles = [];
+    for (const file of supportedFiles) {
+      const isImage = file.type.startsWith('image/');
+      const maxSize = isImage ? MAX_IMAGE_SIZE : MAX_FILE_SIZE;
+      if (file.size > maxSize) {
+        invalidFiles.push({
+          name: file.name,
+          size: file.size,
+          maxSize,
+          isImage,
+        });
+      }
+    }
+
+    if (invalidFiles.length > 0) {
+      const messages = invalidFiles.map(
+        (f) => `"${f.name}" (${formatFileSize(f.size)}) exceeds ${f.isImage ? 'image' : 'file'} limit of ${formatFileSize(f.maxSize)}`
+      );
+      alert(`File size limit exceeded:\n\n${messages.join('\n')}`);
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      for (const file of supportedFiles) {
+        const result = await onUploadFile(file);
+        setAttachments((prev) => [...prev, result]);
+      }
+    } catch (error) {
+      console.error('File drop upload failed:', error);
+      alert(`Failed to upload file: ${error.message}`);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   if (!conversation) {
     return (
       <div className="chat-interface">
         <div className="empty-state">
-          <h2>Welcome to LLM Council Plus</h2>
+          <h2>Welcome to LLM-TTCC-TEAM-PRO</h2>
           <p>Create a new conversation to get started</p>
         </div>
       </div>
@@ -221,12 +307,30 @@ export default function ChatInterface({
   }
 
   return (
-    <div className="chat-interface">
+    <div
+      className={`chat-interface ${isDragOver ? 'drag-over' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragOver && (
+        <div className="drag-overlay">
+          <div className="drag-overlay-content">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <span>Drop files here</span>
+            <span className="drag-hint">PDF, TXT, MD, MDX, JPG, PNG, GIF, WebP</span>
+          </div>
+        </div>
+      )}
       <div className="messages-container">
         {conversation.messages.length === 0 ? (
           <div className="empty-state">
             <h2>Start a conversation</h2>
-            <p>Ask a question to consult the LLM Council Plus</p>
+            <p>Ask a question to consult LLM-TTCC-TEAM-PRO</p>
           </div>
         ) : (
           conversation.messages.map((msg, index) => (
@@ -242,7 +346,7 @@ export default function ChatInterface({
                 </div>
               ) : (
                 <div className="assistant-message">
-                  <div className="message-label">LLM Council Plus</div>
+                  <div className="message-label">LLM-TTCC-TEAM-PRO</div>
 
                   <SearchContext toolOutputs={msg.metadata?.tool_outputs || msg.tool_outputs} />
 
@@ -418,7 +522,7 @@ export default function ChatInterface({
               type="file"
               ref={fileInputRef}
               onChange={handleFileSelect}
-              accept=".pdf,.txt,.md,.jpg,.jpeg,.png,.gif,.webp"
+              accept=".pdf,.txt,.md,.mdx,.jpg,.jpeg,.png,.gif,.webp"
               multiple
               style={{ display: 'none' }}
             />
@@ -429,7 +533,7 @@ export default function ChatInterface({
               className="attach-button"
               onClick={() => fileInputRef.current?.click()}
               disabled={isLoading || isUploading}
-              title="Attach file (PDF, TXT, MD, JPG, PNG, GIF, WebP)"
+              title="Attach file (PDF, TXT, MD, MDX, JPG, PNG, GIF, WebP)"
             >
               {isUploading ? (
                 <div className="spinner-small"></div>

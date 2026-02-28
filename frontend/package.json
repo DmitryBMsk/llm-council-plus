@@ -1,8 +1,8 @@
 {
-  "name": "llm-council-frontend",
+  "name": "llm-ttcc-team-pro-frontend",
   "private": true,
-  "version": "1.2.11",
-  "description": "Frontend for LLM Council - Multi-LLM deliberation system",
+  "version": "1.4.0",
+  "description": "Frontend for LLM-TTCC-TEAM-PRO - Multi-LLM deliberation and course creation system",
   "license": "MIT",
   "keywords": [
     "llm",

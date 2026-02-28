@@ -12,11 +12,24 @@ from typing import List
 
 logger = logging.getLogger(__name__)
 
-# Tool import: prefer langchain_core, fall back to langchain.tools for older installs
+# Tool import: prefer langchain_core, fall back to langchain.tools, or use a minimal shim
 try:
     from langchain_core.tools import Tool  # type: ignore
 except ImportError:  # pragma: no cover
-    from langchain.tools import Tool  # type: ignore
+    try:
+        from langchain.tools import Tool  # type: ignore
+    except ImportError:
+        # LangChain not installed — define a minimal Tool class so the module loads.
+        # Tools that depend on LangChain will return None and be filtered out.
+        class Tool:  # type: ignore
+            """Minimal Tool shim when LangChain is not installed."""
+            def __init__(self, name: str, func, description: str):
+                self.name = name
+                self.func = func
+                self.description = description
+
+            def run(self, *args, **kwargs):
+                return self.func(*args, **kwargs)
 
 # Optional: langchain_community (tools)
 try:  # pragma: no cover

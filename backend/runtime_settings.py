@@ -63,7 +63,7 @@ FINAL RANKING:
 Now provide your evaluation and ranking:"""
 
 
-DEFAULT_STAGE3_PROMPT_TEMPLATE = """You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
+DEFAULT_STAGE3_PROMPT_TEMPLATE = """You are the Chairman of an LLM-TTCC-TEAM-PRO council. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
 
 Original Question: {user_query}
 
