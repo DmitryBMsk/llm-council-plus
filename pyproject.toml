@@ -1,6 +1,6 @@
 [project]
 name = "llm-council"
-version = "1.2.9"
+version = "1.3.1"
 description = "Multi-LLM Council with democratic voting - Ask multiple AI models and let them evaluate each other"
 authors = [{name = "LLM Council Contributors"}]
 license = {text = "MIT"}
