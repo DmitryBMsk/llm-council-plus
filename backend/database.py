@@ -113,7 +113,8 @@ def init_database():
 
     logger.info("Initializing %s database...", DB_TYPE.upper())
 
-    # Import models to register them
+    # Import models to register them with SQLAlchemy metadata
+    from . import models  # noqa: F401
 
     # Create all tables
     Base.metadata.create_all(bind=engine)
