@@ -746,7 +746,7 @@ async def get_auth_status():
 @app.get("/api/conversations", response_model=List[ConversationMetadata])
 async def list_conversations(current_user: str = Depends(get_current_user)):
     """List all conversations (metadata only). Requires authentication."""
-    return storage.list_conversations()
+    return storage.list_conversations(username=current_user)
 
 
 @app.post("/api/conversations", response_model=Conversation)
@@ -774,13 +774,12 @@ async def create_conversation(
                 )
 
     conversation_id = str(uuid.uuid4())
-    # Use authenticated user if not specified in request
-    username = request.username or current_user
+    # Always use the authenticated identity — never trust client-supplied username
     conversation = storage.create_conversation(
         conversation_id,
         models=request.models,
         chairman=request.chairman,
-        username=username,
+        username=current_user,
         execution_mode=request.execution_mode or "full",
         router_type=router_type,
     )
@@ -793,7 +792,7 @@ async def get_conversation(
     current_user: str = Depends(get_current_user)
 ):
     """Get a specific conversation with all its messages. Requires authentication."""
-    conversation = storage.get_conversation(conversation_id)
+    conversation = storage.get_conversation(conversation_id, username=current_user)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
@@ -805,10 +804,8 @@ async def delete_conversation(
     current_user: str = Depends(get_current_user)
 ):
     """Delete a specific conversation. Requires authentication."""
-    conversation = storage.get_conversation(conversation_id)
-    if conversation is None:
+    if not storage.delete_conversation(conversation_id, username=current_user):
         raise HTTPException(status_code=404, detail="Conversation not found")
-    storage.delete_conversation(conversation_id)
     return {"status": "deleted", "id": conversation_id}
 
 
@@ -822,11 +819,10 @@ async def update_title(
     Update the title of a conversation (Feature 5). Requires authentication.
     Works with all storage backends: JSON, PostgreSQL, MySQL.
     """
-    conversation = storage.get_conversation(conversation_id)
-    if conversation is None:
+    try:
+        storage.update_conversation_title(conversation_id, request.title, username=current_user)
+    except ValueError:
         raise HTTPException(status_code=404, detail="Conversation not found")
-
-    storage.update_conversation_title(conversation_id, request.title)
 
     return {
         "success": True,
@@ -837,8 +833,8 @@ async def update_title(
 
 @app.delete("/api/conversations")
 async def delete_all_conversations(current_user: str = Depends(get_current_user)):
-    """Delete all conversations. Requires authentication."""
-    storage.delete_all_conversations()
+    """Delete all conversations for the current user. Requires authentication."""
+    storage.delete_all_conversations(username=current_user)
     return {"status": "deleted", "count": "all"}
 
 
@@ -1008,8 +1004,8 @@ async def send_message(
         }
 
     # Normal mode: save to storage
-    # Check if conversation exists
-    conversation = storage.get_conversation(conversation_id)
+    # Check if conversation exists and is owned by current user
+    conversation = storage.get_conversation(conversation_id, username=current_user)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -1022,7 +1018,7 @@ async def send_message(
     # If this is the first message, generate a title
     if is_first_message:
         title = await generate_conversation_title(request.content)
-        storage.update_conversation_title(conversation_id, title)
+        storage.update_conversation_title(conversation_id, title, username=current_user)
 
     # Get conversation history for context (exclude the just-added user message)
     conversation_history = conversation["messages"]  # History before current question
@@ -1069,8 +1065,8 @@ async def send_message_stream(
     Returns Server-Sent Events as each stage completes.
     Supports multimodal queries with image attachments.
     """
-    # Check if conversation exists
-    conversation = storage.get_conversation(conversation_id)
+    # Check if conversation exists and is owned by current user
+    conversation = storage.get_conversation(conversation_id, username=current_user)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -1183,7 +1179,7 @@ async def send_message_stream(
 
                 if title_task:
                     title = await title_task
-                    storage.update_conversation_title(conversation_id, title)
+                    storage.update_conversation_title(conversation_id, title, username=current_user)
                     yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
                 yield f"data: {json.dumps({'type': 'complete'})}\n\n"
@@ -1250,7 +1246,7 @@ async def send_message_stream(
 
                 if title_task:
                     title = await title_task
-                    storage.update_conversation_title(conversation_id, title)
+                    storage.update_conversation_title(conversation_id, title, username=current_user)
                     yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
                 yield f"data: {json.dumps({'type': 'complete'})}\n\n"
@@ -1311,7 +1307,7 @@ async def send_message_stream(
             # Wait for title generation if it was started
             if title_task:
                 title = await title_task
-                storage.update_conversation_title(conversation_id, title)
+                storage.update_conversation_title(conversation_id, title, username=current_user)
                 yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
             # Send completion event
