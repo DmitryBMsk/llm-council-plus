@@ -3,11 +3,14 @@
 When AUTH_ENABLED=true, each user must only see and modify their own conversations.
 Unauthorized access returns 404 (not 403) to prevent conversation ID enumeration.
 When AUTH_ENABLED=false, all conversations are accessible via 'guest' identity.
+
+Covers both the storage layer (unit) and the FastAPI route layer (integration).
 """
 
 from __future__ import annotations
 
 import pytest
+import uuid
 
 
 # ---------------------------------------------------------------------------
@@ -210,3 +213,95 @@ class TestLegacyOwnerless:
 
         conv = storage.get_conversation(cid, username="alice")
         assert conv is None
+
+
+# ---------------------------------------------------------------------------
+# No-filtering when username=None (internal / auth-disabled bypass)
+# ---------------------------------------------------------------------------
+
+class TestNoFilteringBypass:
+    """When username=None is passed, all conversations are visible (backwards compat)."""
+
+    def test_get_without_username_returns_any_owner(self, tmp_path, monkeypatch):
+        storage = _setup_json_storage(monkeypatch, tmp_path)
+        cid = _create_conversation(storage, "alice")
+
+        conv = storage.get_conversation(cid)  # no username
+        assert conv is not None
+
+    def test_list_without_username_returns_all(self, tmp_path, monkeypatch):
+        storage = _setup_json_storage(monkeypatch, tmp_path)
+        _create_conversation(storage, "alice")
+        _create_conversation(storage, "bob")
+        _create_conversation(storage, None)
+
+        all_convs = storage.list_conversations()  # no username
+        assert len(all_convs) == 3
+
+    def test_delete_all_without_username_removes_everything(self, tmp_path, monkeypatch):
+        storage = _setup_json_storage(monkeypatch, tmp_path)
+        _create_conversation(storage, "alice")
+        _create_conversation(storage, "bob")
+
+        storage.delete_all_conversations()  # no username
+        assert len(storage.list_conversations()) == 0
+
+
+# ---------------------------------------------------------------------------
+# HTTP-layer integration tests (TestClient)
+# ---------------------------------------------------------------------------
+
+class TestHTTPAuthDisabledSeesAll:
+    """When AUTH_ENABLED=false, the API must expose ALL conversations regardless of owner.
+
+    This is the regression caught by the reviewer: get_current_user returns 'guest',
+    but _ownership_username returns None, so no filtering is applied.
+    """
+
+    @pytest.fixture()
+    def client_auth_disabled(self, tmp_path, monkeypatch):
+        from .. import storage, config
+        from ..main import app
+
+        monkeypatch.setattr(storage, "is_using_database", lambda: False)
+        monkeypatch.setattr(storage.config, "DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(config, "AUTH_ENABLED", False)
+
+        from starlette.testclient import TestClient
+        return TestClient(app)
+
+    def test_list_returns_all_owners(self, client_auth_disabled, tmp_path, monkeypatch):
+        from .. import storage
+        _create_conversation(storage, "alice")
+        _create_conversation(storage, "bob")
+        _create_conversation(storage, None)
+
+        resp = client_auth_disabled.get("/api/conversations")
+        assert resp.status_code == 200
+        assert len(resp.json()) == 3
+
+    def test_get_other_users_conversation(self, client_auth_disabled, tmp_path, monkeypatch):
+        from .. import storage
+        cid = _create_conversation(storage, "alice")
+
+        resp = client_auth_disabled.get(f"/api/conversations/{cid}")
+        assert resp.status_code == 200
+        assert resp.json()["id"] == cid
+
+    def test_delete_other_users_conversation(self, client_auth_disabled, tmp_path, monkeypatch):
+        from .. import storage
+        cid = _create_conversation(storage, "alice")
+
+        resp = client_auth_disabled.delete(f"/api/conversations/{cid}")
+        assert resp.status_code == 200
+
+    def test_delete_all_removes_everything(self, client_auth_disabled, tmp_path, monkeypatch):
+        from .. import storage
+        _create_conversation(storage, "alice")
+        _create_conversation(storage, "bob")
+
+        resp = client_auth_disabled.delete("/api/conversations")
+        assert resp.status_code == 200
+
+        remaining = storage.list_conversations()
+        assert len(remaining) == 0

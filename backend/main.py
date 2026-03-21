@@ -92,6 +92,17 @@ async def get_current_user(
     return username
 
 
+def _ownership_username(current_user: str) -> Optional[str]:
+    """Return username for ownership filtering, or None when auth is disabled.
+
+    When AUTH_ENABLED=false all conversations are shared — no ownership filtering.
+    When AUTH_ENABLED=true each user sees only their own conversations.
+    """
+    if not config.AUTH_ENABLED:
+        return None
+    return current_user
+
+
 async def get_optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ) -> Optional[str]:
@@ -746,7 +757,7 @@ async def get_auth_status():
 @app.get("/api/conversations", response_model=List[ConversationMetadata])
 async def list_conversations(current_user: str = Depends(get_current_user)):
     """List all conversations (metadata only). Requires authentication."""
-    return storage.list_conversations(username=current_user)
+    return storage.list_conversations(username=_ownership_username(current_user))
 
 
 @app.post("/api/conversations", response_model=Conversation)
@@ -792,7 +803,7 @@ async def get_conversation(
     current_user: str = Depends(get_current_user)
 ):
     """Get a specific conversation with all its messages. Requires authentication."""
-    conversation = storage.get_conversation(conversation_id, username=current_user)
+    conversation = storage.get_conversation(conversation_id, username=_ownership_username(current_user))
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
@@ -804,7 +815,7 @@ async def delete_conversation(
     current_user: str = Depends(get_current_user)
 ):
     """Delete a specific conversation. Requires authentication."""
-    if not storage.delete_conversation(conversation_id, username=current_user):
+    if not storage.delete_conversation(conversation_id, username=_ownership_username(current_user)):
         raise HTTPException(status_code=404, detail="Conversation not found")
     return {"status": "deleted", "id": conversation_id}
 
@@ -820,7 +831,7 @@ async def update_title(
     Works with all storage backends: JSON, PostgreSQL, MySQL.
     """
     try:
-        storage.update_conversation_title(conversation_id, request.title, username=current_user)
+        storage.update_conversation_title(conversation_id, request.title, username=_ownership_username(current_user))
     except ValueError:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -834,7 +845,7 @@ async def update_title(
 @app.delete("/api/conversations")
 async def delete_all_conversations(current_user: str = Depends(get_current_user)):
     """Delete all conversations for the current user. Requires authentication."""
-    storage.delete_all_conversations(username=current_user)
+    storage.delete_all_conversations(username=_ownership_username(current_user))
     return {"status": "deleted", "count": "all"}
 
 
@@ -1005,7 +1016,8 @@ async def send_message(
 
     # Normal mode: save to storage
     # Check if conversation exists and is owned by current user
-    conversation = storage.get_conversation(conversation_id, username=current_user)
+    ownership = _ownership_username(current_user)
+    conversation = storage.get_conversation(conversation_id, username=ownership)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -1018,7 +1030,7 @@ async def send_message(
     # If this is the first message, generate a title
     if is_first_message:
         title = await generate_conversation_title(request.content)
-        storage.update_conversation_title(conversation_id, title, username=current_user)
+        storage.update_conversation_title(conversation_id, title, username=ownership)
 
     # Get conversation history for context (exclude the just-added user message)
     conversation_history = conversation["messages"]  # History before current question
@@ -1066,7 +1078,8 @@ async def send_message_stream(
     Supports multimodal queries with image attachments.
     """
     # Check if conversation exists and is owned by current user
-    conversation = storage.get_conversation(conversation_id, username=current_user)
+    ownership = _ownership_username(current_user)
+    conversation = storage.get_conversation(conversation_id, username=ownership)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -1179,7 +1192,7 @@ async def send_message_stream(
 
                 if title_task:
                     title = await title_task
-                    storage.update_conversation_title(conversation_id, title, username=current_user)
+                    storage.update_conversation_title(conversation_id, title, username=ownership)
                     yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
                 yield f"data: {json.dumps({'type': 'complete'})}\n\n"
@@ -1246,7 +1259,7 @@ async def send_message_stream(
 
                 if title_task:
                     title = await title_task
-                    storage.update_conversation_title(conversation_id, title, username=current_user)
+                    storage.update_conversation_title(conversation_id, title, username=ownership)
                     yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
                 yield f"data: {json.dumps({'type': 'complete'})}\n\n"
@@ -1307,7 +1320,7 @@ async def send_message_stream(
             # Wait for title generation if it was started
             if title_task:
                 title = await title_task
-                storage.update_conversation_title(conversation_id, title, username=current_user)
+                storage.update_conversation_title(conversation_id, title, username=ownership)
                 yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
             # Send completion event
