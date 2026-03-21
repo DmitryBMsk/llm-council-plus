@@ -98,6 +98,7 @@ class TestDatabaseSettingsStability:
         """config.reload_config() must update DATABASE_TYPE global."""
         from .. import config
 
+        monkeypatch.setattr("backend.config.load_dotenv", lambda **_kw: None)
         monkeypatch.setenv("DATABASE_TYPE", "postgresql")
         config.reload_config()
         assert config.DATABASE_TYPE == "postgresql"
@@ -106,3 +107,24 @@ class TestDatabaseSettingsStability:
         monkeypatch.setenv("DATABASE_TYPE", "json")
         config.reload_config()
         assert config.DATABASE_TYPE == "json"
+
+    def test_database_module_db_type_is_import_time_snapshot(self):
+        """database.DB_TYPE is set at import time and does not change on reload.
+
+        This is intentional — changing DB backend requires a restart.
+        """
+        from .. import database, config
+        # DB_TYPE was set from config at import time
+        assert database.DB_TYPE == config.DATABASE_TYPE
+
+    def test_reload_config_uses_appsettings(self, monkeypatch):
+        """reload_config() must parse through AppSettings, not raw os.getenv."""
+        from .. import config
+
+        monkeypatch.setattr("backend.config.load_dotenv", lambda **_kw: None)
+        monkeypatch.setenv("ROUTER_TYPE", "ollama")
+        monkeypatch.setenv("AUTH_ENABLED", "true")
+        config.reload_config()
+
+        assert config.ROUTER_TYPE == "ollama"
+        assert config.AUTH_ENABLED is True
