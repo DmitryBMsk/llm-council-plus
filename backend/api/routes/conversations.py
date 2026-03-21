@@ -658,7 +658,7 @@ async def send_message_stream(
             if title_task:
                 title = await title_task
                 storage.update_conversation_title(conversation_id, title, username=ownership)
-                yield f"data: {json.dumps({'type': 'title_complete', 'data': {{'title': title}}})}\n\n"
+                yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
             # Send completion event
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"

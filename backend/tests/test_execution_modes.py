@@ -465,6 +465,101 @@ async def test_stream_full_mode_emits_stage3_heartbeat_and_stage3_complete():
 
 
 @pytest.mark.asyncio
+async def test_full_mode_first_message_emits_title_complete():
+    """First message in full mode must emit title_complete SSE event.
+
+    Regression test: double-brace typo {{'title': title}} caused TypeError.
+    """
+    from ..api.routes.conversations import send_message_stream
+    from .. import storage
+
+    conversation_id = "00000000-0000-0000-0000-000000000099"
+
+    stage1_results = [{"model": "test/model-a", "response": "Answer A"}]
+    stage2_results = [{"model": "test/model-a", "ranking": "1. A", "parsed_ranking": ["A"]}]
+    stage3_result = {"response": "Final answer"}
+    label_to_model = {"Response A": "test/model-a"}
+    aggregate_rankings = [{"model": "test/model-a", "avg_position": 1.0}]
+    token_stats = {"total": 100}
+
+    saved_messages = []
+
+    def track_save(*args, **kwargs):
+        saved_messages.append({"args": args, "kwargs": kwargs})
+
+    async def mock_stage1_streaming(*args, **kw):
+        for r in stage1_results:
+            yield r  # streaming yields dicts directly, not tuples
+
+    stage2_task = asyncio.Future()
+    stage2_task.set_result((stage2_results, label_to_model))
+    stage2_task._timeouts_before_done = 0
+
+    stage3_task = asyncio.Future()
+    stage3_task.set_result(stage3_result)
+    stage3_task._timeouts_before_done = 0
+
+    title_task = asyncio.Future()
+    title_task.set_result("Generated Title")
+
+    created_tasks = []
+
+    def fake_create_task(coro):
+        if not created_tasks:
+            task = title_task  # first create_task is title generation
+        elif len(created_tasks) == 1:
+            task = stage2_task
+        else:
+            task = stage3_task
+        created_tasks.append(task)
+        return task
+
+    def fake_shield(task):
+        return task
+
+    async def fake_wait_for(task, timeout):
+        if hasattr(task, '_timeouts_before_done') and task._timeouts_before_done > 0:
+            task._timeouts_before_done -= 1
+            raise asyncio.TimeoutError
+        return task.result()
+
+    # Key: empty messages list → is_first_message = True → title_task fires
+    with patch.object(storage, "get_conversation", return_value={
+        "id": conversation_id,
+        "messages": [],
+        "models": None,
+        "chairman": None,
+        "execution_mode": "full",
+    }), patch.object(storage, "add_user_message"), patch.object(
+        storage, "add_assistant_message", side_effect=track_save
+    ), patch.object(storage, "update_conversation_title"), patch(
+        "backend.api.routes.conversations.stage1_collect_responses_streaming", mock_stage1_streaming
+    ), patch("backend.api.routes.conversations.calculate_aggregate_rankings", return_value=aggregate_rankings), patch(
+        "backend.api.routes.conversations.get_token_stats", return_value=token_stats
+    ), patch("backend.api.routes.conversations.reset_token_stats"), patch(
+        "backend.api.routes.conversations.asyncio.create_task", side_effect=fake_create_task
+    ), patch("backend.api.routes.conversations.asyncio.shield", side_effect=fake_shield), patch(
+        "backend.api.routes.conversations.asyncio.wait_for", side_effect=fake_wait_for
+    ):
+
+        class MockRequest:
+            content = "First message"
+            attachments = None
+            web_search = False
+            web_search_provider = None
+
+        response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+        events = await _collect_sse_events(response)
+
+    event_types = [e["type"] for e in events]
+    assert "title_complete" in event_types, f"title_complete missing from SSE events: {event_types}"
+    assert "error" not in event_types, f"Unexpected error in SSE events: {event_types}"
+
+    title_event = next(e for e in events if e["type"] == "title_complete")
+    assert title_event["data"] == {"title": "Generated Title"}
+
+
+@pytest.mark.asyncio
 async def test_api_create_conversation_passes_execution_mode_to_storage():
     """
     Conversation-level execution_mode must be persisted at creation time so that
