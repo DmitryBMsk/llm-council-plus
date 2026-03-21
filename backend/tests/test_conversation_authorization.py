@@ -28,7 +28,6 @@ def _setup_json_storage(monkeypatch, tmp_path):
 
 def _create_conversation(storage_mod, username: str, conv_id: str | None = None):
     """Create a conversation owned by *username* and return its id."""
-    import uuid
 
     cid = conv_id or str(uuid.uuid4())
     storage_mod.create_conversation(cid, models=None, chairman=None, username=username)

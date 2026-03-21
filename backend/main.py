@@ -1,6 +1,6 @@
 """FastAPI backend for LLM Council."""
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Depends, Header
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -38,7 +38,7 @@ VERSION = get_version()
 from . import storage
 from .council import (
     run_full_council, generate_conversation_title,
-    stage1_collect_responses, stage1_collect_responses_streaming,
+    stage1_collect_responses_streaming,
     stage2_collect_rankings, stage3_synthesize_final,
     calculate_aggregate_rankings, reset_token_stats, get_token_stats
 )
@@ -889,7 +889,7 @@ async def upload_file(
         if is_image_file(filename) and len(file_content) > max_image_size:
             raise HTTPException(
                 status_code=400,
-                detail=f"Image file too large. Maximum size is 20MB."
+                detail="Image file too large. Maximum size is 20MB."
             )
 
         # Parse the file

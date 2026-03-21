@@ -1,6 +1,5 @@
 """File parsing utilities for PDF, TXT, MD, and image files."""
 
-import io
 import base64
 from typing import Tuple
 

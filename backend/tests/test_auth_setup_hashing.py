@@ -37,11 +37,7 @@ class TestSetupHashesBeforeWrite:
         env_path = tmp_path / ".env"
         env_path.write_text("")
 
-        from ..main import app, save_setup_config
-        import backend.main as main_mod
-
-        # Patch the env_path resolution inside save_setup_config
-        original_fn = save_setup_config
+        from ..main import app  # noqa: F811
 
         from starlette.testclient import TestClient
         client = TestClient(app)

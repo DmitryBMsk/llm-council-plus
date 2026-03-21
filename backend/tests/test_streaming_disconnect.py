@@ -2,8 +2,7 @@
 
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
-import json
+from unittest.mock import AsyncMock, patch
 
 
 class TestStreamingDisconnect:
@@ -178,7 +177,7 @@ class TestGeneratorCleanup:
             try:
                 # Simulate stage 1
                 stage1_results = [{"model": "test", "response": "data"}]
-                yield f"data: stage1_complete\n\n"
+                yield "data: stage1_complete\n\n"
 
                 # Simulate stage 2 (will be interrupted)
                 await asyncio.sleep(10)
@@ -239,7 +238,7 @@ class TestGeneratorCleanup:
             try:
                 # Stage 1 - completes
                 stage1_results = [{"model": "test", "response": "data"}]
-                yield f"data: stage1_complete\n\n"
+                yield "data: stage1_complete\n\n"
 
                 # Stage 2 - gets interrupted by client disconnect
                 await asyncio.sleep(10)
@@ -284,7 +283,7 @@ class TestGeneratorCleanup:
             try:
                 # Stage 1 - completes
                 stage1_results = [{"model": "test", "response": "data"}]
-                yield f"data: stage1_complete\n\n"
+                yield "data: stage1_complete\n\n"
 
                 # Stage 2 - gets interrupted by client disconnect
                 await asyncio.sleep(10)

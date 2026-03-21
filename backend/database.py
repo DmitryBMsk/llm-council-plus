@@ -4,7 +4,6 @@ import logging
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.pool import NullPool
 from typing import Literal
 
 logger = logging.getLogger(__name__)
@@ -115,7 +114,6 @@ def init_database():
     logger.info("Initializing %s database...", DB_TYPE.upper())
 
     # Import models to register them
-    from . import models
 
     # Create all tables
     Base.metadata.create_all(bind=engine)

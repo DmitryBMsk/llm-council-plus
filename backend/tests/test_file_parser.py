@@ -1,6 +1,5 @@
 """Tests for file_parser module - image support."""
 
-import pytest
 import base64
 from ..file_parser import (
     parse_file,
