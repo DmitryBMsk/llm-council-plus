@@ -42,8 +42,8 @@ USERS: Dict[str, Dict[str, str]] = {}
 
 
 def _is_bcrypt_hash(value: str) -> bool:
-    """Check if a string is already a bcrypt hash."""
-    return isinstance(value, str) and (value.startswith("$2b$") or value.startswith("$2a$"))
+    """Check if a string is already a bcrypt hash ($2a$, $2b$, $2y$ variants)."""
+    return isinstance(value, str) and value.startswith(("$2a$", "$2b$", "$2y$"))
 
 
 def _init_users_from_env():

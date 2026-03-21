@@ -400,11 +400,12 @@ async def save_setup_config(request: SetupConfigRequest):
     if request.jwt_secret:
         updates["JWT_SECRET"] = request.jwt_secret
     if request.auth_users:
-        # Hash passwords before persisting — never store plaintext
-        from .auth import hash_password
+        # Hash passwords before persisting — never store plaintext.
+        # Skip already-hashed values to prevent double-hashing on re-setup.
+        from .auth import hash_password, _is_bcrypt_hash
         hashed_users = {
-            username: hash_password(password)
-            for username, password in request.auth_users.items()
+            username: (pwd if _is_bcrypt_hash(pwd) else hash_password(pwd))
+            for username, pwd in request.auth_users.items()
         }
         updates["AUTH_USERS"] = json.dumps(hashed_users)
 

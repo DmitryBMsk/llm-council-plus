@@ -12,8 +12,9 @@ import pytest
 
 
 def _is_bcrypt_hash(value: str) -> bool:
-    """Check if a string looks like a bcrypt hash."""
-    return value.startswith("$2b$") or value.startswith("$2a$")
+    """Import the real detection function from auth module."""
+    from ..auth import _is_bcrypt_hash as real_check
+    return real_check(value)
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +136,10 @@ class TestBcryptDetection:
         from ..auth import hash_password
         h = hash_password("test")
         assert _is_bcrypt_hash(h)
+
+    def test_detects_2y_variant(self):
+        # $2y$ is used by PHP and some migration tooling
+        assert _is_bcrypt_hash("$2y$12$somehashdata")
 
     def test_rejects_plaintext(self):
         assert not _is_bcrypt_hash("mypassword")
