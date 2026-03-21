@@ -400,8 +400,13 @@ async def save_setup_config(request: SetupConfigRequest):
     if request.jwt_secret:
         updates["JWT_SECRET"] = request.jwt_secret
     if request.auth_users:
-        # Serialize users dict to JSON string
-        updates["AUTH_USERS"] = json.dumps(request.auth_users)
+        # Hash passwords before persisting — never store plaintext
+        from .auth import hash_password
+        hashed_users = {
+            username: hash_password(password)
+            for username, password in request.auth_users.items()
+        }
+        updates["AUTH_USERS"] = json.dumps(hashed_users)
 
     if not updates:
         raise HTTPException(status_code=400, detail="No configuration provided")
@@ -416,9 +421,13 @@ async def save_setup_config(request: SetupConfigRequest):
             return str(value)
         # Remove newlines and carriage returns (could inject new variables)
         sanitized = value.replace('\n', '').replace('\r', '')
-        # If value contains spaces, quotes, or # (comment char), quote it
-        if ' ' in sanitized or '"' in sanitized or "'" in sanitized or '#' in sanitized:
-            # Escape existing quotes and wrap in quotes
+        # Values with $ (e.g. bcrypt hashes) must use single quotes to avoid
+        # shell variable expansion. Single quotes preserve $ literally.
+        if '$' in sanitized:
+            # Escape any embedded single quotes: ' → '\''
+            sanitized = "'" + sanitized.replace("'", "'\\''") + "'"
+        elif ' ' in sanitized or '"' in sanitized or "'" in sanitized or '#' in sanitized:
+            # Escape existing quotes and wrap in double quotes
             sanitized = '"' + sanitized.replace('"', '\\"') + '"'
         return sanitized
 

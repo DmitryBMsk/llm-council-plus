@@ -41,14 +41,18 @@ def validate_jwt_config():
 USERS: Dict[str, Dict[str, str]] = {}
 
 
+def _is_bcrypt_hash(value: str) -> bool:
+    """Check if a string is already a bcrypt hash."""
+    return isinstance(value, str) and (value.startswith("$2b$") or value.startswith("$2a$"))
+
+
 def _init_users_from_env():
     """
     Initialize users from AUTH_USERS environment variable.
 
-    Format: JSON object {"username": "password", ...}
-    Example: AUTH_USERS={"Alex": "mypassword", "Bob": "secret123"}
-
-    Passwords are hashed with bcrypt at startup.
+    Format: JSON object {"username": "password_or_hash", ...}
+    Values may be bcrypt hashes (persisted by setup) or legacy plaintext.
+    Pre-hashed values are used directly; plaintext is hashed on load.
     """
     # If auth is disabled, don't require bcrypt or load users at import time.
     if not config.AUTH_ENABLED:
@@ -67,17 +71,37 @@ def _init_users_from_env():
             logger.error("AUTH_USERS must be a JSON object")
             return
 
-        for username, password in users_config.items():
-            if not username or not password:
+        has_plaintext = False
+        for username, credential in users_config.items():
+            if not username or not credential:
                 logger.warning(f"Skipping invalid user entry: {username}")
                 continue
 
+            if _is_bcrypt_hash(credential):
+                # Already hashed (setup-persisted or manually configured)
+                password_hash = credential
+            else:
+                # Legacy plaintext — hash on load
+                has_plaintext = True
+                password_hash = bcrypt.hashpw(
+                    credential.encode(), bcrypt.gensalt()
+                ).decode()
+                logger.warning(
+                    "User '%s' has plaintext password in AUTH_USERS. "
+                    "Re-run setup or replace with a bcrypt hash.",
+                    username,
+                )
+
             USERS[username] = {
-                "password_hash": bcrypt.hashpw(
-                    password.encode(), bcrypt.gensalt()
-                ).decode(),
-                "name": username
+                "password_hash": password_hash,
+                "name": username,
             }
+
+        if has_plaintext:
+            logger.warning(
+                "AUTH_USERS contains plaintext passwords. "
+                "Re-run the setup wizard to persist hashed credentials."
+            )
 
         if USERS:
             logger.info(f"Loaded {len(USERS)} users from AUTH_USERS")
