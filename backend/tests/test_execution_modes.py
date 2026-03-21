@@ -1,7 +1,46 @@
 """Tests for conversation-level execution modes (chat_only/chat_ranking/full)."""
 
+import asyncio
+import json
 from unittest.mock import patch, AsyncMock
 import pytest
+
+
+def _parse_sse_event(chunk):
+    """Decode a single SSE chunk emitted by the streaming endpoint."""
+    text = chunk.decode() if isinstance(chunk, (bytes, bytearray)) else str(chunk)
+    assert text.startswith("data: "), text
+    return json.loads(text[6:].strip())
+
+
+async def _collect_sse_events(response):
+    """Collect decoded SSE payloads from a StreamingResponse."""
+    events = []
+    async for chunk in response.body_iterator:
+        events.append(_parse_sse_event(chunk))
+    return events
+
+
+class _ControlledTask:
+    """Small deterministic task double for heartbeat tests."""
+
+    def __init__(self, result, *, timeouts_before_done=0):
+        self._result = result
+        self._timeouts_before_done = timeouts_before_done
+        self.cancelled = False
+
+    def done(self):
+        return self._timeouts_before_done == 0
+
+    def result(self):
+        return self._result
+
+    def cancel(self):
+        self.cancelled = True
+        self._timeouts_before_done = 0
+
+    async def wait(self):
+        return self._result
 
 
 def test_storage_add_assistant_message_allows_stage_omission_for_chat_only():
@@ -134,10 +173,10 @@ async def test_stream_chat_only_skips_stage2_and_stage3():
     }), patch.object(storage, "add_user_message"), patch.object(
         storage, "add_assistant_message", side_effect=track_save
     ), patch.object(storage, "update_conversation_title"), patch(
-        "backend.main.generate_conversation_title", new=AsyncMock(return_value="Test Title")
-    ), patch("backend.main.stage1_collect_responses_streaming", mock_stage1_streaming), patch(
-        "backend.main.stage2_collect_rankings", stage2_should_not_run
-    ), patch("backend.main.stage3_synthesize_final", stage3_should_not_run):
+        "backend.api.routes.conversations.generate_conversation_title", new=AsyncMock(return_value="Test Title")
+    ), patch("backend.api.routes.conversations.stage1_collect_responses_streaming", mock_stage1_streaming), patch(
+        "backend.api.routes.conversations.stage2_collect_rankings", stage2_should_not_run
+    ), patch("backend.api.routes.conversations.stage3_synthesize_final", stage3_should_not_run):
 
         class MockRequest:
             content = "Test query"
@@ -165,6 +204,264 @@ async def test_stream_chat_only_skips_stage2_and_stage3():
     assert saved_call[1] == [{"model": "m1", "response": "r1"}]
     # In chat_only we expect stage2/stage3 omitted entirely (default None)
     assert len(saved_call) >= 2
+
+
+@pytest.mark.asyncio
+async def test_stream_chat_only_emits_tool_outputs_token_stats_and_title_for_first_message():
+    """chat_only should stop after Stage 1 but still emit the rest of the visible contract."""
+    from ..main import send_message_stream
+    from .. import storage
+
+    conversation_id = "00000000-0000-0000-0000-000000000004"
+    saved_messages = []
+    tool_outputs = [{"type": "web_search", "content": "search hit"}]
+    token_stats = {"total": 42, "input": 12, "output": 30}
+
+    async def mock_stage1_streaming(*args, **kwargs):
+        yield {"type": "tool_outputs", "tool_outputs": tool_outputs}
+        yield {"model": "m1", "response": "r1"}
+
+    async def stage2_should_not_run(*args, **kwargs):
+        raise AssertionError("Stage 2 should not run in chat_only mode")
+
+    async def stage3_should_not_run(*args, **kwargs):
+        raise AssertionError("Stage 3 should not run in chat_only mode")
+
+    def track_save(*args, **kwargs):
+        saved_messages.append({"args": args, "kwargs": kwargs})
+
+    with patch.object(storage, "get_conversation", return_value={
+        "id": conversation_id,
+        "messages": [],
+        "models": None,
+        "chairman": None,
+        "execution_mode": "chat_only",
+    }), patch.object(storage, "add_user_message"), patch.object(
+        storage, "add_assistant_message", side_effect=track_save
+    ), patch.object(storage, "update_conversation_title"), patch(
+        "backend.api.routes.conversations.generate_conversation_title", new=AsyncMock(return_value="Generated Title")
+    ), patch("backend.api.routes.conversations.stage1_collect_responses_streaming", mock_stage1_streaming), patch(
+        "backend.api.routes.conversations.stage2_collect_rankings", stage2_should_not_run
+    ), patch("backend.api.routes.conversations.stage3_synthesize_final", stage3_should_not_run), patch(
+        "backend.api.routes.conversations.get_token_stats", return_value=token_stats
+    ), patch("backend.api.routes.conversations.reset_token_stats"):
+
+        class MockRequest:
+            content = "First message"
+            attachments = None
+            web_search = False
+            web_search_provider = None
+
+        response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+        events = await _collect_sse_events(response)
+
+    assert [event["type"] for event in events] == [
+        "stage1_start",
+        "tool_outputs",
+        "stage1_model_response",
+        "stage1_complete",
+        "token_stats",
+        "title_complete",
+        "complete",
+    ]
+    assert events[1]["data"] == tool_outputs
+    assert events[4]["data"] == token_stats
+    assert events[5]["data"] == {"title": "Generated Title"}
+
+    assert len(saved_messages) == 1
+    saved_call = saved_messages[0]["args"]
+    assert saved_call[4] == {
+        "execution_mode": "chat_only",
+        "tool_outputs": tool_outputs,
+        "token_stats": token_stats,
+    }
+
+
+@pytest.mark.asyncio
+async def test_stream_chat_ranking_stops_after_stage2_with_heartbeat_and_metadata():
+    """chat_ranking should emit a Stage 2 heartbeat and never enter Stage 3."""
+    from ..main import send_message_stream
+    from .. import storage
+
+    conversation_id = "00000000-0000-0000-0000-000000000005"
+    saved_messages = []
+    tool_outputs = [{"type": "calculator", "content": "2+2=4"}]
+    stage2_results = [{"model": "judge-1", "ranking": "1. Response A"}]
+    label_to_model = {"Response A": "m1"}
+    aggregate_rankings = [{"response": "Response A", "score": 1.0}]
+    token_stats = {"total": 12, "input": 7, "output": 5}
+    stage2_task = _ControlledTask((stage2_results, label_to_model), timeouts_before_done=1)
+
+    async def mock_stage1_streaming(*args, **kwargs):
+        yield {"type": "tool_outputs", "tool_outputs": tool_outputs}
+        yield {"model": "m1", "response": "r1"}
+
+    async def stage3_should_not_run(*args, **kwargs):
+        raise AssertionError("Stage 3 should not run in chat_ranking mode")
+
+    def track_save(*args, **kwargs):
+        saved_messages.append({"args": args, "kwargs": kwargs})
+
+    def fake_create_task(coro):
+        coro.close()
+        return stage2_task
+
+    def fake_shield(task):
+        return task
+
+    async def fake_wait_for(task, timeout):
+        if task._timeouts_before_done > 0:
+            task._timeouts_before_done -= 1
+            raise asyncio.TimeoutError
+        return task.result()
+
+    with patch.object(storage, "get_conversation", return_value={
+        "id": conversation_id,
+        "messages": [{"role": "user", "content": "Existing message"}],
+        "models": None,
+        "chairman": None,
+        "execution_mode": "chat_ranking",
+    }), patch.object(storage, "add_user_message"), patch.object(
+        storage, "add_assistant_message", side_effect=track_save
+    ), patch.object(storage, "update_conversation_title"), patch(
+        "backend.api.routes.conversations.stage1_collect_responses_streaming", mock_stage1_streaming
+    ), patch("backend.api.routes.conversations.stage3_synthesize_final", stage3_should_not_run), patch(
+        "backend.api.routes.conversations.calculate_aggregate_rankings", return_value=aggregate_rankings
+    ), patch("backend.api.routes.conversations.get_token_stats", return_value=token_stats), patch(
+        "backend.api.routes.conversations.reset_token_stats"
+    ), patch("backend.api.routes.conversations.asyncio.create_task", side_effect=fake_create_task), patch(
+        "backend.api.routes.conversations.asyncio.shield", side_effect=fake_shield
+    ), patch("backend.api.routes.conversations.asyncio.wait_for", side_effect=fake_wait_for):
+
+        class MockRequest:
+            content = "Rank this"
+            attachments = None
+            web_search = False
+            web_search_provider = None
+
+        response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+        events = await _collect_sse_events(response)
+
+    assert [event["type"] for event in events] == [
+        "stage1_start",
+        "tool_outputs",
+        "stage1_model_response",
+        "stage1_complete",
+        "stage2_start",
+        "heartbeat",
+        "stage2_complete",
+        "token_stats",
+        "complete",
+    ]
+    assert events[5]["stage"] == "stage2"
+    assert events[6]["metadata"] == {
+        "label_to_model": label_to_model,
+        "aggregate_rankings": aggregate_rankings,
+    }
+    assert "stage3_start" not in {event["type"] for event in events}
+
+    assert len(saved_messages) == 1
+    saved_call = saved_messages[0]["args"]
+    assert saved_call[3] is None
+    assert saved_call[4] == {
+        "execution_mode": "chat_ranking",
+        "label_to_model": label_to_model,
+        "aggregate_rankings": aggregate_rankings,
+        "tool_outputs": tool_outputs,
+        "token_stats": token_stats,
+    }
+
+
+@pytest.mark.asyncio
+async def test_stream_full_mode_emits_stage3_heartbeat_and_stage3_complete():
+    """full mode should continue through Stage 3 and surface the Stage 3 heartbeat contract."""
+    from ..main import send_message_stream
+    from .. import storage
+
+    conversation_id = "00000000-0000-0000-0000-000000000006"
+    saved_messages = []
+    stage2_results = [{"model": "judge-1", "ranking": "1. Response A"}]
+    label_to_model = {"Response A": "m1"}
+    aggregate_rankings = [{"response": "Response A", "score": 1.0}]
+    stage3_result = {"model": "chairman", "response": "Final answer"}
+    token_stats = {"total": 20, "input": 9, "output": 11}
+    stage2_task = _ControlledTask((stage2_results, label_to_model))
+    stage3_task = _ControlledTask(stage3_result, timeouts_before_done=1)
+    created_tasks = []
+
+    async def mock_stage1_streaming(*args, **kwargs):
+        yield {"model": "m1", "response": "r1"}
+
+    def track_save(*args, **kwargs):
+        saved_messages.append({"args": args, "kwargs": kwargs})
+
+    def fake_create_task(coro):
+        coro.close()
+        task = stage2_task if not created_tasks else stage3_task
+        created_tasks.append(task)
+        return task
+
+    def fake_shield(task):
+        return task
+
+    async def fake_wait_for(task, timeout):
+        if task._timeouts_before_done > 0:
+            task._timeouts_before_done -= 1
+            raise asyncio.TimeoutError
+        return task.result()
+
+    with patch.object(storage, "get_conversation", return_value={
+        "id": conversation_id,
+        "messages": [{"role": "user", "content": "Existing message"}],
+        "models": None,
+        "chairman": None,
+        "execution_mode": "full",
+    }), patch.object(storage, "add_user_message"), patch.object(
+        storage, "add_assistant_message", side_effect=track_save
+    ), patch.object(storage, "update_conversation_title"), patch(
+        "backend.api.routes.conversations.stage1_collect_responses_streaming", mock_stage1_streaming
+    ), patch("backend.api.routes.conversations.calculate_aggregate_rankings", return_value=aggregate_rankings), patch(
+        "backend.api.routes.conversations.get_token_stats", return_value=token_stats
+    ), patch("backend.api.routes.conversations.reset_token_stats"), patch(
+        "backend.api.routes.conversations.asyncio.create_task", side_effect=fake_create_task
+    ), patch("backend.api.routes.conversations.asyncio.shield", side_effect=fake_shield), patch(
+        "backend.api.routes.conversations.asyncio.wait_for", side_effect=fake_wait_for
+    ):
+
+        class MockRequest:
+            content = "Full run"
+            attachments = None
+            web_search = False
+            web_search_provider = None
+
+        response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+        events = await _collect_sse_events(response)
+
+    assert [event["type"] for event in events] == [
+        "stage1_start",
+        "stage1_model_response",
+        "stage1_complete",
+        "stage2_start",
+        "stage2_complete",
+        "stage3_start",
+        "heartbeat",
+        "stage3_complete",
+        "token_stats",
+        "complete",
+    ]
+    assert events[6]["stage"] == "stage3"
+    assert events[7]["data"] == stage3_result
+    assert events[8]["data"] == token_stats
+
+    assert len(saved_messages) == 1
+    saved_call = saved_messages[0]["args"]
+    assert saved_call[3] == stage3_result
+    assert saved_call[4] == {
+        "label_to_model": label_to_model,
+        "aggregate_rankings": aggregate_rankings,
+        "tool_outputs": [],
+        "token_stats": token_stats,
+    }
 
 
 @pytest.mark.asyncio
