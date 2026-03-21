@@ -243,7 +243,7 @@ function App() {
       loadConversations();
     } catch (error) {
       console.error('Failed to delete conversation:', error);
-      alert('Failed to delete conversation');
+      addToast('Failed to delete conversation', 'error');
     }
   };
 
@@ -255,7 +255,7 @@ function App() {
       loadConversations();
     } catch (error) {
       console.error('Failed to delete all conversations:', error);
-      alert('Failed to delete all conversations');
+      addToast('Failed to delete all conversations', 'error');
     }
   };
 
@@ -275,7 +275,7 @@ function App() {
       }
     } catch (error) {
       console.error('Failed to update title:', error);
-      alert('Failed to update conversation title');
+      addToast('Failed to update conversation title', 'error');
     }
   };
 
@@ -692,6 +692,7 @@ function App() {
           exaEnabled={exaEnabled}
           duckduckgoEnabled={duckduckgoEnabled}
           braveEnabled={braveEnabled}
+          addToast={addToast}
         />
       </ErrorBoundary>
       <ModelSelector

@@ -79,6 +79,7 @@ export default function ChatInterface({
   exaEnabled = false,
   duckduckgoEnabled = false,
   braveEnabled = false,
+  addToast = () => {},
 }) {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState([]);
@@ -112,7 +113,7 @@ export default function ChatInterface({
       }));
     } catch (error) {
       console.error('Drive upload failed:', error);
-      alert(`Failed to upload to Drive: ${error.message}`);
+      addToast(`Failed to upload to Drive: ${error.message}`, 'error');
     } finally {
       setDriveUploading((prev) => ({ ...prev, [index]: false }));
     }
@@ -180,7 +181,7 @@ export default function ChatInterface({
       const messages = invalidFiles.map(
         (f) => `"${f.name}" (${formatFileSize(f.size)}) exceeds ${f.isImage ? 'image' : 'file'} limit of ${formatFileSize(f.maxSize)}`
       );
-      alert(`File size limit exceeded:\n\n${messages.join('\n')}`);
+      addToast(`File size limit exceeded: ${messages.join('; ')}`, 'warning');
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -195,7 +196,7 @@ export default function ChatInterface({
       }
     } catch (error) {
       console.error('File upload failed:', error);
-      alert(`Failed to upload file: ${error.message}`);
+      addToast(`Failed to upload file: ${error.message}`, 'error');
     } finally {
       setIsUploading(false);
       // Clear the file input
