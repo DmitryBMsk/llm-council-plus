@@ -6,7 +6,7 @@ If you discover a security vulnerability, please report it privately via GitHub 
 
 ## Supported Versions
 
-Only the latest release on the `main` branch receives security updates.
+This project is provided as-is without guaranteed maintenance. If a security issue is reported, it will be addressed on a best-effort basis on the `main` branch.
 
 ## Security Design
 

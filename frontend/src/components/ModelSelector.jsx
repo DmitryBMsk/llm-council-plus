@@ -123,6 +123,7 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
       setSavedPresets(loadSavedPresets());
       loadModels();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   // Load last used selection when models are loaded
@@ -130,6 +131,7 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
     if (allModels.length > 0 && isOpen) {
       loadLastUsedSelection();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allModels, isOpen]);
 
   // Clamp council size when maxModels changes.

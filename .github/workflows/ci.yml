@@ -35,7 +35,7 @@ jobs:
         run: .venv/bin/python -m pytest -q
 
   frontend:
-    name: Frontend (lint + build)
+    name: Frontend (lint + build + test)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -57,3 +57,6 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Tests (vitest)
+        run: npm run test
