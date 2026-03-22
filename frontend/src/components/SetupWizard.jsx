@@ -159,7 +159,7 @@ export default function SetupWizard({ onComplete }) {
     <div className="setup-container">
       <div className="setup-box setup-box-wide">
         <div className="setup-header">
-          <h1 className="setup-title">Welcome to LLM Council Plus</h1>
+          <h1 className="setup-title">Welcome to LLM-TTCC-TEAM-PRO</h1>
           <p className="setup-subtitle">Let's configure your application</p>
         </div>
 

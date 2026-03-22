@@ -1,1 +1,1 @@
-"""LLM Council backend package."""
+"""LLM-TTCC-TEAM-PRO backend package."""

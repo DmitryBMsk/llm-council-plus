@@ -137,7 +137,7 @@ export default function SettingsModal({ isOpen, onClose }) {
     try {
       const config = await api.exportRuntimeSettings();
       const { sanitized } = sanitizeRuntimeSettingsJson(config);
-      downloadJson(`llm-council-settings-${new Date().toISOString().slice(0, 10)}.json`, sanitized);
+      downloadJson(`llm-ttcc-team-pro-settings-${new Date().toISOString().slice(0, 10)}.json`, sanitized);
     } catch (e) {
       setError(e.message || 'Failed to export settings');
     }

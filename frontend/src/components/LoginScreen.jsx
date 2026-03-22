@@ -102,7 +102,7 @@ export default function LoginScreen({ onLogin }) {
               <text x="60" y="66" textAnchor="middle" fill="white" fontSize="18" fontWeight="bold">∑</text>
             </svg>
           </div>
-          <h1 className="login-title">LLM Council Plus</h1>
+          <h1 className="login-title">LLM-TTCC-TEAM-PRO</h1>
           <p className="login-subtitle">Please sign in to continue</p>
         </div>
 

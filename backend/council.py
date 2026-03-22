@@ -1,4 +1,4 @@
-"""3-stage LLM Council orchestration."""
+"""3-stage LLM-TTCC-TEAM-PRO council orchestration."""
 
 import re
 import json
@@ -652,6 +652,7 @@ async def stage1_collect_responses_streaming(
     web_search_provider: Optional[str] = None,
     chairman: str = None,
     router_type: Optional[str] = None,
+    system_prompt: Optional[str] = None,
 ):
     """
     Stage 1: Collect individual responses from all council models with streaming.
@@ -665,6 +666,7 @@ async def stage1_collect_responses_streaming(
         conversation_id: Optional conversation ID for memory system
         web_search_provider: Optional search provider ('duckduckgo', 'tavily', 'exa', 'brave') to force web search
         chairman: Optional chairman model for search query optimization
+        system_prompt: Optional custom system prompt for the conversation (e.g., TTCC mode)
 
     Yields:
         Dict with 'model', 'response', and optionally 'tool_outputs' keys
@@ -727,6 +729,11 @@ Search Results:
                 messages.insert(0, {"role": "system", "content": f"Relevant past exchanges:\n{memory_ctx}"})
         except Exception as e:
             logger.warning("Memory context retrieval failed (streaming): %s", e)
+
+    # Inject custom system prompt (e.g., TTCC mode) as the FIRST system message
+    if system_prompt:
+        messages.insert(0, {"role": "system", "content": system_prompt})
+        logger.info("[STAGE1-STREAM] Custom system prompt injected (%d chars)", len(system_prompt))
 
     # Use provided models or fall back to default
     council_models = models if models else config.COUNCIL_MODELS
