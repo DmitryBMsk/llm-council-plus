@@ -9,8 +9,7 @@ from typing import List, Dict, Any, Tuple, Optional
 from .toon_encoder import (
     encode_for_llm,
     get_savings_stats,
-    aggregate_token_stats,
-    is_toon_available
+    aggregate_token_stats
 )
 
 logger = logging.getLogger(__name__)

@@ -1,9 +1,16 @@
 """Tests for streaming disconnect handling - partial results should be saved."""
 
-import pytest
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
 import json
+from unittest.mock import AsyncMock, patch
+import pytest
+
+
+def _parse_sse_event(chunk):
+    """Decode a single SSE chunk emitted by the streaming endpoint."""
+    text = chunk.decode() if isinstance(chunk, (bytes, bytearray)) else str(chunk)
+    assert text.startswith("data: "), text
+    return json.loads(text[6:].strip())
 
 
 class TestStreamingDisconnect:
@@ -59,8 +66,8 @@ class TestStreamingDisconnect:
         }), \
         patch.object(storage, 'add_user_message'), \
         patch.object(storage, 'add_assistant_message', side_effect=track_save), \
-        patch('backend.main.stage1_collect_responses_streaming', mock_stage1_streaming), \
-        patch('backend.main.stage2_collect_rankings', mock_stage2_slow):
+        patch('backend.api.routes.conversations.stage1_collect_responses_streaming', mock_stage1_streaming), \
+        patch('backend.api.routes.conversations.stage2_collect_rankings', mock_stage2_slow):
 
             # Create mock request
             class MockRequest:
@@ -96,6 +103,82 @@ class TestStreamingDisconnect:
 
         assert saved_stage1 is not None, "Stage1 results should be saved"
         assert len(saved_stage1) == 2, "Both stage1 responses should be saved"
+
+    @pytest.mark.asyncio
+    async def test_partial_save_includes_metadata_shape_and_tool_outputs(self):
+        """Disconnect cleanup should persist the partial-save metadata contract."""
+        from ..main import send_message_stream
+        from .. import storage
+
+        conversation_id = "test-disconnect-conv-002"
+        saved_messages = []
+        tool_outputs = [{"type": "web_search", "content": "search hit"}]
+
+        async def mock_stage1_streaming(*args, **kwargs):
+            yield {"type": "tool_outputs", "tool_outputs": tool_outputs}
+            yield {"model": "gpt-5.1", "response": "Stage 1 response"}
+
+        async def mock_stage2_slow(*args, **kwargs):
+            await asyncio.sleep(10)
+            return [], {}
+
+        def track_save(*args, **kwargs):
+            saved_messages.append({"args": args, "kwargs": kwargs})
+
+        with patch.object(storage, "get_conversation", return_value={
+            "id": conversation_id,
+            "messages": [{"role": "user", "content": "Existing message"}],
+            "models": None,
+            "chairman": None,
+            "execution_mode": "full",
+        }), patch.object(storage, "add_user_message"), patch.object(
+            storage, "add_assistant_message", side_effect=track_save
+        ), patch("backend.api.routes.conversations.stage1_collect_responses_streaming", mock_stage1_streaming), patch(
+            "backend.api.routes.conversations.stage2_collect_rankings", mock_stage2_slow
+        ), patch("backend.api.routes.conversations.reset_token_stats"):
+
+            class MockRequest:
+                content = "Test query"
+                attachments = None
+                web_search = False
+                web_search_provider = None
+
+            response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+            generator = response.body_iterator
+            events = []
+
+            async for chunk in generator:
+                event = _parse_sse_event(chunk)
+                events.append(event)
+                if event["type"] == "stage2_start":
+                    await generator.aclose()
+                    break
+
+            await asyncio.sleep(0.1)
+
+        assert [event["type"] for event in events] == [
+            "stage1_start",
+            "tool_outputs",
+            "stage1_model_response",
+            "stage1_complete",
+            "stage2_start",
+        ]
+        assert len(saved_messages) == 1
+        saved_call = saved_messages[0]["args"]
+        assert saved_call[1] == [{"model": "gpt-5.1", "response": "Stage 1 response"}]
+        assert saved_call[2] == []
+        assert saved_call[3] is None
+        assert saved_call[4] == {
+            "label_to_model": {},
+            "aggregate_rankings": [],
+            "tool_outputs": tool_outputs,
+            "partial": True,
+            "stages_completed": {
+                "stage1": True,
+                "stage2": False,
+                "stage3": False,
+            },
+        }
 
     @pytest.mark.asyncio
     async def test_saves_complete_results_on_normal_completion(self):
@@ -135,11 +218,11 @@ class TestStreamingDisconnect:
         patch.object(storage, 'add_user_message'), \
         patch.object(storage, 'add_assistant_message', side_effect=track_save), \
         patch.object(storage, 'update_conversation_title'), \
-        patch('backend.main.stage1_collect_responses_streaming', mock_stage1_streaming), \
-        patch('backend.main.stage2_collect_rankings', mock_stage2), \
-        patch('backend.main.stage3_synthesize_final', mock_stage3), \
-        patch('backend.main.generate_conversation_title', new=AsyncMock(return_value="Test Title")), \
-        patch('backend.main.calculate_aggregate_rankings', return_value=[]):
+        patch('backend.api.routes.conversations.stage1_collect_responses_streaming', mock_stage1_streaming), \
+        patch('backend.api.routes.conversations.stage2_collect_rankings', mock_stage2), \
+        patch('backend.api.routes.conversations.stage3_synthesize_final', mock_stage3), \
+        patch('backend.api.routes.conversations.generate_conversation_title', new=AsyncMock(return_value="Test Title")), \
+        patch('backend.api.routes.conversations.calculate_aggregate_rankings', return_value=[]):
 
             class MockRequest:
                 content = "Test query"
@@ -157,6 +240,49 @@ class TestStreamingDisconnect:
 
         # ASSERTION: Results should be saved on normal completion
         assert len(saved_messages) == 1, "Should save exactly once on normal completion"
+
+    @pytest.mark.asyncio
+    async def test_stream_emits_error_event_for_stage1_configuration_error(self):
+        """Configuration failures in Stage 1 should surface as an SSE error event and stop cleanly."""
+        from ..main import send_message_stream
+        from .. import storage
+
+        conversation_id = "test-disconnect-conv-003"
+        saved_messages = []
+
+        async def mock_stage1_error(*args, **kwargs):
+            raise ValueError("No council models configured")
+            yield  # pragma: no cover
+
+        def track_save(*args, **kwargs):
+            saved_messages.append({"args": args, "kwargs": kwargs})
+
+        with patch.object(storage, "get_conversation", return_value={
+            "id": conversation_id,
+            "messages": [],
+            "models": None,
+            "chairman": None,
+            "execution_mode": "full",
+        }), patch.object(storage, "add_user_message"), patch.object(
+            storage, "add_assistant_message", side_effect=track_save
+        ), patch(
+            "backend.api.routes.conversations.stage1_collect_responses_streaming", mock_stage1_error
+        ), patch("backend.api.routes.conversations.reset_token_stats"):
+
+            class MockRequest:
+                content = "Test query"
+                attachments = None
+                web_search = False
+                web_search_provider = None
+
+            response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+            events = []
+            async for chunk in response.body_iterator:
+                events.append(_parse_sse_event(chunk))
+
+        assert [event["type"] for event in events] == ["stage1_start", "error"]
+        assert events[-1]["message"] == "No council models configured"
+        assert saved_messages == []
 
 
 class TestGeneratorCleanup:
@@ -178,7 +304,7 @@ class TestGeneratorCleanup:
             try:
                 # Simulate stage 1
                 stage1_results = [{"model": "test", "response": "data"}]
-                yield f"data: stage1_complete\n\n"
+                yield "data: stage1_complete\n\n"
 
                 # Simulate stage 2 (will be interrupted)
                 await asyncio.sleep(10)
@@ -239,7 +365,7 @@ class TestGeneratorCleanup:
             try:
                 # Stage 1 - completes
                 stage1_results = [{"model": "test", "response": "data"}]
-                yield f"data: stage1_complete\n\n"
+                yield "data: stage1_complete\n\n"
 
                 # Stage 2 - gets interrupted by client disconnect
                 await asyncio.sleep(10)
@@ -284,7 +410,7 @@ class TestGeneratorCleanup:
             try:
                 # Stage 1 - completes
                 stage1_results = [{"model": "test", "response": "data"}]
-                yield f"data: stage1_complete\n\n"
+                yield "data: stage1_complete\n\n"
 
                 # Stage 2 - gets interrupted by client disconnect
                 await asyncio.sleep(10)

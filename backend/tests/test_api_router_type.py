@@ -86,13 +86,13 @@ async def test_send_message_stream_passes_router_type_to_council():
     ), patch.object(storage, "add_user_message"), patch.object(
         storage, "add_assistant_message", side_effect=track_save
     ), patch.object(storage, "update_conversation_title"), patch(
-        "backend.main.generate_conversation_title", autospec=True
+        "backend.api.routes.conversations.generate_conversation_title", autospec=True
     ) as title_gen_mock, patch(
-        "backend.main.stage1_collect_responses_streaming", mock_stage1_streaming
+        "backend.api.routes.conversations.stage1_collect_responses_streaming", mock_stage1_streaming
     ), patch(
-        "backend.main.stage2_collect_rankings", stage2_collect_rankings_spy
+        "backend.api.routes.conversations.stage2_collect_rankings", stage2_collect_rankings_spy
     ), patch(
-        "backend.main.stage3_synthesize_final", stage3_synthesize_final_spy
+        "backend.api.routes.conversations.stage3_synthesize_final", stage3_synthesize_final_spy
     ):
         title_gen_mock.return_value = "Title"
 

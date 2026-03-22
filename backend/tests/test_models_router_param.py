@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
 
 
@@ -14,7 +13,7 @@ def test_get_models_accepts_router_type_query_param_and_ollama_includes_context_
     from ..main import app
 
     # Force the endpoint to take the ollama path regardless of env
-    monkeypatch.setattr("backend.main.OLLAMA_HOST", "localhost:11434", raising=False)
+    monkeypatch.setattr("backend.api.routes.models.config.OLLAMA_HOST", "localhost:11434", raising=False)
 
     class FakeResponse:
         status_code = 200
@@ -32,7 +31,7 @@ def test_get_models_accepts_router_type_query_param_and_ollama_includes_context_
         async def get(self, *args, **kwargs):
             return FakeResponse()
 
-    monkeypatch.setattr("backend.main.httpx.AsyncClient", lambda *a, **k: FakeClient())
+    monkeypatch.setattr("backend.api.routes.models.httpx.AsyncClient", lambda *a, **k: FakeClient())
 
     client = TestClient(app)
     resp = client.get("/api/models?router_type=ollama")
