@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# LLM-TTCC-TEAM-PRO - Start script
+# LLM Council Plus - Start script
 # Installs all dependencies, then starts backend and frontend
 
 set -e
@@ -9,7 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "============================================"
-echo "  LLM-TTCC-TEAM-PRO - Starting up..."
+echo "  LLM Council Plus - Starting up..."
 echo "============================================"
 echo ""
 
@@ -108,7 +108,7 @@ cd "$SCRIPT_DIR"
 
 echo ""
 echo "============================================"
-echo "  ✓ LLM-TTCC-TEAM-PRO is running!"
+echo "  ✓ LLM Council Plus is running!"
 echo ""
 echo "  Backend:  http://localhost:8001"
 echo "  Frontend: http://localhost:5173"
@@ -120,7 +120,7 @@ echo "============================================"
 # Cleanup on exit
 cleanup() {
     echo ""
-    echo "Shutting down LLM-TTCC-TEAM-PRO..."
+    echo "Shutting down LLM Council Plus..."
     kill $BACKEND_PID $FRONTEND_PID 2>/dev/null
     wait $BACKEND_PID $FRONTEND_PID 2>/dev/null
     echo "Done."

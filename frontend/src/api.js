@@ -1,5 +1,5 @@
 /**
- * API client for the LLM-TTCC-TEAM-PRO backend.
+ * API client for the LLM Council Plus backend.
  * Uses relative paths in production (nginx proxy) or localhost in development.
  */
 
@@ -11,7 +11,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || '';
  */
 function getAuthToken() {
   try {
-    const authData = localStorage.getItem('llm-ttcc-team-pro-auth');
+    const authData = localStorage.getItem('llm-council-plus-auth');
     if (authData) {
       const parsed = JSON.parse(authData);
       if (parsed.state && parsed.state.token) {
@@ -48,7 +48,7 @@ function getAuthHeaders(additionalHeaders = {}) {
 function handleUnauthorized() {
   // Clear auth state in localStorage
   try {
-    localStorage.removeItem('llm-ttcc-team-pro-auth');
+    localStorage.removeItem('llm-council-plus-auth');
   } catch (e) {
     console.error('Failed to clear auth state:', e);
   }
@@ -481,18 +481,6 @@ export const api = {
     const response = await fetch(`${API_BASE}/api/setup/status`);
     if (!response.ok) {
       throw new Error('Failed to get setup status');
-    }
-    return response.json();
-  },
-
-  /**
-   * Get available system prompt presets (e.g., TTCC mode).
-   * @returns {Promise<{presets: Array<{id: string, name: string, prompt: string|null}>}>}
-   */
-  async getSystemPromptPresets() {
-    const response = await authFetch(`${API_BASE}/api/system-prompt-presets`);
-    if (!response.ok) {
-      throw new Error('Failed to get system prompt presets');
     }
     return response.json();
   },

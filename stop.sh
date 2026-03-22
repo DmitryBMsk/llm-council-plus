@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# LLM-TTCC-TEAM-PRO - Stop script
+# LLM Council Plus - Stop script
 # Kills all running app processes and frees up all related ports
 
 echo "============================================"
-echo "  LLM-TTCC-TEAM-PRO - Shutting down..."
+echo "  LLM Council Plus - Shutting down..."
 echo "============================================"
 echo ""
 
@@ -95,11 +95,11 @@ echo ""
 # --------------------------------------------------
 if [ $KILLED -gt 0 ]; then
     echo "============================================"
-    echo "  ✓ LLM-TTCC-TEAM-PRO has been stopped."
+    echo "  ✓ LLM Council Plus has been stopped."
     echo "    Cleaned up $KILLED process group(s)."
     echo "============================================"
 else
     echo "============================================"
-    echo "  No running LLM-TTCC-TEAM-PRO processes found."
+    echo "  No running LLM Council Plus processes found."
     echo "============================================"
 fi
