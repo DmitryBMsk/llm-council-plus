@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Entrypoint script for llm-ttcc-team-pro backend
+# Entrypoint script for llm-council-plus backend
 # Ensures data directories exist with correct permissions before starting the app
 # Runs as root initially to fix permissions, then drops to appuser
 

@@ -432,7 +432,7 @@ def create_conversation(
         models: Optional list of council model IDs
         chairman: Optional chairman/judge model ID
         username: Optional username of the user who created the conversation
-        system_prompt: Optional system prompt for the conversation (e.g., TTCC mode)
+        system_prompt: Optional system prompt for the conversation
 
     Returns:
         New conversation dict

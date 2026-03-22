@@ -1,4 +1,4 @@
-"""Authentication module for LLM-TTCC-TEAM-PRO with JWT + bcrypt."""
+"""Authentication module for LLM Council Plus with JWT + bcrypt."""
 
 import json
 import logging

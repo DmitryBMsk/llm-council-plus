@@ -1,4 +1,4 @@
-"""3-stage LLM-TTCC-TEAM-PRO council orchestration."""
+"""3-stage LLM Council Plus council orchestration."""
 
 import re
 import json
@@ -666,7 +666,7 @@ async def stage1_collect_responses_streaming(
         conversation_id: Optional conversation ID for memory system
         web_search_provider: Optional search provider ('duckduckgo', 'tavily', 'exa', 'brave') to force web search
         chairman: Optional chairman model for search query optimization
-        system_prompt: Optional custom system prompt for the conversation (e.g., TTCC mode)
+        system_prompt: Optional custom system prompt for the conversation
 
     Yields:
         Dict with 'model', 'response', and optionally 'tool_outputs' keys
@@ -730,7 +730,7 @@ Search Results:
         except Exception as e:
             logger.warning("Memory context retrieval failed (streaming): %s", e)
 
-    # Inject custom system prompt (e.g., TTCC mode) as the FIRST system message
+    # Inject custom system prompt as the FIRST system message
     if system_prompt:
         messages.insert(0, {"role": "system", "content": system_prompt})
         logger.info("[STAGE1-STREAM] Custom system prompt injected (%d chars)", len(system_prompt))

@@ -1,12 +1,12 @@
-# CLAUDE.md - Technical Notes for LLM-TTCC-TEAM-PRO
+# CLAUDE.md - Technical Notes for LLM Council Plus
 
 This file contains technical details, architectural decisions, and important implementation notes for future development sessions.
 
 ## Project Overview
 
-LLM-TTCC-TEAM-PRO is a 3-stage deliberation system where multiple LLMs collaboratively answer user questions. The key innovation is anonymized peer review in Stage 2, preventing models from playing favorites.
+LLM Council Plus is a 3-stage deliberation system where multiple LLMs collaboratively answer user questions. The key innovation is anonymized peer review in Stage 2, preventing models from playing favorites.
 
-**Application Name:** LLM-TTCC-TEAM-PRO
+**Application Name:** LLM Council Plus
 
 ## Architecture
 
@@ -91,7 +91,7 @@ APP_VERSION="1.2.12" docker compose up -d
 - Conversation list with user filter
 - 3-dot menu for edit/delete
 - Inline title editing
-- SVG logo with "LLM-TTCC-TEAM-PRO" text
+- SVG logo with "LLM Council Plus" text
 
 **`components/ChatInterface.jsx`**
 - Multiline textarea (3 rows, resizable)
