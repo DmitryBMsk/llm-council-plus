@@ -3,7 +3,7 @@
  */
 export function exportToMarkdown(userMessage, assistantMessage) {
   const timestamp = new Date().toISOString().split('T')[0];
-  let md = `# LLM Council Plus Response\n\n`;
+  let md = `# LLM-TTCC-TEAM-PRO Response\n\n`;
   md += `**Date:** ${timestamp}\n\n`;
   md += `---\n\n`;
 
@@ -76,5 +76,5 @@ export function downloadMarkdown(content, filename) {
 }
 
 export function generateFilename(index) {
-  return `llm-council-${new Date().toISOString().slice(0, 10)}-${index}.md`;
+  return `llm-ttcc-team-pro-${new Date().toISOString().slice(0, 10)}-${index}.md`;
 }

@@ -7,7 +7,6 @@ If not installed, memory is gracefully disabled.
 from __future__ import annotations
 
 import os
-from typing import Optional
 from pathlib import Path
 
 # Try to import heavy dependencies - they are optional
@@ -90,7 +89,7 @@ class CouncilMemorySystem:
             if not docs:
                 return ""
             return "\n".join(doc.page_content for doc in docs if doc.page_content).strip()
-        except Exception as e:
+        except Exception:
             # Consider logging the exception for debugging purposes, e.g.:
             # import logging
             # logging.error(f"Error retrieving memory context: {e}")

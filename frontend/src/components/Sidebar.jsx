@@ -168,7 +168,7 @@ export default function Sidebar({
             <line x1="43" y1="50" x2="33" y2="43" stroke="#4a90e2" strokeWidth="3" />
             <text x="60" y="66" textAnchor="middle" fill="white" fontSize="20" fontWeight="bold">∑</text>
           </svg>
-          <span className="sidebar-title-text">LLM Council Plus</span>
+          <span className="sidebar-title-text">LLM-TTCC-TEAM-PRO</span>
         </div>
 
         <div className="sidebar-actions">

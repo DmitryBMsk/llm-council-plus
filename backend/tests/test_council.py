@@ -1,7 +1,5 @@
 """Tests for council module - multimodal support."""
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 
 class TestMultimodalCouncil:

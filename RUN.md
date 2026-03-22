@@ -1,6 +1,6 @@
-# How to Run LLM Council
+# How to Run LLM-TTCC-TEAM-PRO
 
-Quick start guide to get LLM Council running on your machine.
+Quick start guide to get LLM-TTCC-TEAM-PRO running on your machine.
 
 ---
 
@@ -29,7 +29,7 @@ Quick start guide to get LLM Council running on your machine.
 ```bash
 # Clone repository
 git clone <your-repo-url>
-cd llm-council
+cd llm-ttcc-team-pro
 
 # Install backend dependencies
 uv sync

@@ -1,41 +1,42 @@
-"""Database configuration with flag-based PostgreSQL/MySQL selection."""
+"""Database configuration with flag-based PostgreSQL/MySQL selection.
+
+Database settings (DATABASE_TYPE, POSTGRESQL_URL, MYSQL_URL) are restart-required.
+Engine and SessionLocal are created once at import time and are NOT refreshed by
+reload_config(). This is intentional — changing DB backend requires a restart.
+"""
 
 import logging
-import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.pool import NullPool
 from typing import Literal
+
+from . import config
 
 logger = logging.getLogger(__name__)
 
 # Create base for models
 Base = declarative_base()
 
-# Database type selection from environment
-DB_TYPE = os.getenv("DATABASE_TYPE", "json").lower()  # Options: "postgresql", "mysql", "json"
-
-# Get database connection strings from environment
-POSTGRESQL_URL = os.getenv("POSTGRESQL_URL", "postgresql://user:password@localhost:5432/llmcouncil")
-MYSQL_URL = os.getenv("MYSQL_URL", "mysql+pymysql://user:password@localhost:3306/llmcouncil")
+# Read DB settings from config (single source of truth) at import time.
+# These are restart-required and intentionally NOT updated by reload_config().
+DB_TYPE = config.DATABASE_TYPE
 
 
 def get_database_url() -> str:
     """
     Get database URL based on DATABASE_TYPE flag.
 
-    Returns:
-        Database connection URL
+    Uses config module values (not stale import-time copies) for URLs,
+    but DB_TYPE is fixed at import time (restart-required).
 
-    Raises:
-        ValueError: If DATABASE_TYPE is invalid
+    Returns:
+        Database connection URL or None for JSON storage
     """
     if DB_TYPE == "postgresql":
-        return POSTGRESQL_URL
+        return config.POSTGRESQL_URL or "postgresql://user:password@localhost:5432/llmcouncil"
     elif DB_TYPE == "mysql":
-        return MYSQL_URL
+        return config.MYSQL_URL or "mysql+pymysql://user:password@localhost:3306/llmcouncil"
     elif DB_TYPE == "json":
-        # Return None for JSON file storage (backward compatible)
         return None
     else:
         raise ValueError(
@@ -114,8 +115,8 @@ def init_database():
 
     logger.info("Initializing %s database...", DB_TYPE.upper())
 
-    # Import models to register them
-    from . import models
+    # Import models to register them with SQLAlchemy metadata
+    from . import models  # noqa: F401
 
     # Create all tables
     Base.metadata.create_all(bind=engine)

@@ -3,11 +3,11 @@ import { api } from '../api';
 import './ModelSelector.css';
 
 // LocalStorage keys
-const LAST_USED_KEY = 'llm-council-last-selection';
-const LAST_CHAIRMAN_KEY = 'llm-council-last-chairman';
-const LAST_EXECUTION_MODE_KEY = 'llm-council-last-execution-mode';
-const LAST_ROUTER_TYPE_KEY = 'llm-council-last-router-type';
-const SAVED_PRESETS_KEY = 'llm-council-saved-presets-v1';
+const LAST_USED_KEY = 'llm-ttcc-team-pro-last-selection';
+const LAST_CHAIRMAN_KEY = 'llm-ttcc-team-pro-last-chairman';
+const LAST_EXECUTION_MODE_KEY = 'llm-ttcc-team-pro-last-execution-mode';
+const LAST_ROUTER_TYPE_KEY = 'llm-ttcc-team-pro-last-router-type';
+const SAVED_PRESETS_KEY = 'llm-ttcc-team-pro-saved-presets-v1';
 
 // Default max models (can be overridden by backend config)
 const DEFAULT_MAX_MODELS = 5;
@@ -98,6 +98,11 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
   const [newPresetName, setNewPresetName] = useState('');
   const [pendingPreset, setPendingPreset] = useState(null);
 
+  // System prompt mode
+  const [systemPromptMode, setSystemPromptMode] = useState('general');
+  const [systemPromptPresets, setSystemPromptPresets] = useState([]);
+  const [customSystemPrompt, setCustomSystemPrompt] = useState('');
+
   // Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [providerFilter, setProviderFilter] = useState('');
@@ -117,12 +122,17 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
     }
   }, []);
 
-  // Load models when modal opens
+  // Load models and system prompt presets when modal opens
   useEffect(() => {
     if (isOpen) {
       setSavedPresets(loadSavedPresets());
       loadModels();
+      // Load system prompt presets
+      api.getSystemPromptPresets()
+        .then(({ presets }) => setSystemPromptPresets(presets || []))
+        .catch((err) => console.log('System prompt presets not available:', err));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   // Load last used selection when models are loaded
@@ -130,6 +140,7 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
     if (allModels.length > 0 && isOpen) {
       loadLastUsedSelection();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allModels, isOpen]);
 
   // Clamp council size when maxModels changes.
@@ -521,11 +532,22 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
       // Save as last used
       saveLastUsedSelection(selectedModels, chairmanModel, executionMode, routerType);
 
+      // Resolve system prompt from mode
+      let resolvedSystemPrompt = null;
+      if (systemPromptMode === 'custom') {
+        resolvedSystemPrompt = customSystemPrompt || null;
+      } else if (systemPromptMode !== 'general') {
+        const preset = systemPromptPresets.find((p) => p.id === systemPromptMode);
+        resolvedSystemPrompt = preset?.prompt || null;
+      }
+
       onConfirm({
         models: selectedModels,
         chairman: chairmanModel,
         executionMode,
         routerType,
+        systemPrompt: resolvedSystemPrompt,
+        systemPromptMode,
       });
       onClose();
     }
@@ -792,6 +814,49 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
               Choose how deep the council deliberates for this conversation.
             </div>
           </div>
+        </div>
+
+        {/* System Prompt Mode */}
+        <div className="selected-models-section" style={{ paddingTop: 0 }}>
+          <h3>System Prompt Mode</h3>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <select
+              value={systemPromptMode}
+              onChange={(e) => setSystemPromptMode(e.target.value)}
+              className="model-selector-select"
+            >
+              <option value="general">General (No System Prompt)</option>
+              {systemPromptPresets.filter((p) => p.id !== 'general').map((preset) => (
+                <option key={preset.id} value={preset.id}>{preset.name}</option>
+              ))}
+              <option value="custom">Custom System Prompt</option>
+            </select>
+            <div style={{ opacity: 0.8, fontSize: '13px', lineHeight: 1.4 }}>
+              {systemPromptMode === 'general' && 'Standard council mode - no system prompt injected.'}
+              {systemPromptMode === 'ttcc' && 'Technical Training Course Creator mode - generates enterprise-grade courses. Web search recommended.'}
+              {systemPromptMode === 'custom' && 'Enter your own system prompt below.'}
+            </div>
+          </div>
+          {systemPromptMode === 'custom' && (
+            <textarea
+              value={customSystemPrompt}
+              onChange={(e) => setCustomSystemPrompt(e.target.value)}
+              placeholder="Enter your custom system prompt..."
+              style={{
+                width: '100%',
+                marginTop: '10px',
+                minHeight: '120px',
+                padding: '12px',
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: '10px',
+                color: '#fff',
+                fontSize: '13px',
+                fontFamily: 'inherit',
+                resize: 'vertical',
+              }}
+            />
+          )}
         </div>
 
         {/* Router */}

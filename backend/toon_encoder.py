@@ -9,7 +9,6 @@ This module provides functions to:
 
 import json
 import logging
-from typing import Any
 
 try:
     from toon import encode as toon_encode, decode as toon_decode

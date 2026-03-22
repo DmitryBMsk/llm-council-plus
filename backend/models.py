@@ -1,6 +1,6 @@
 """SQLAlchemy models for PostgreSQL and MySQL."""
 
-from sqlalchemy import Column, String, Text, DateTime, JSON, Index
+from sqlalchemy import Column, String, DateTime, JSON, Index
 from sqlalchemy.sql import func
 from .database import Base
 

@@ -144,6 +144,7 @@ def _json_create_conversation(
     username: Optional[str] = None,
     execution_mode: Optional[str] = None,
     router_type: Optional[str] = None,
+    system_prompt: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Create conversation in JSON file with exclusive lock."""
     ensure_data_dir()
@@ -158,6 +159,7 @@ def _json_create_conversation(
         "username": username,
         "execution_mode": execution_mode,
         "router_type": router_type,
+        "system_prompt": system_prompt,
     }
 
     path = get_conversation_path(conversation_id)
@@ -278,11 +280,12 @@ def _db_create_conversation(
     username: Optional[str] = None,
     execution_mode: Optional[str] = None,
     router_type: Optional[str] = None,
+    system_prompt: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Create conversation in database."""
     models_payload: Any = models
-    if execution_mode is not None or router_type is not None:
-        models_payload = {"models": models, "execution_mode": execution_mode, "router_type": router_type}
+    if execution_mode is not None or router_type is not None or system_prompt is not None:
+        models_payload = {"models": models, "execution_mode": execution_mode, "router_type": router_type, "system_prompt": system_prompt}
 
     db = SessionLocal()
     try:
@@ -396,6 +399,22 @@ def _db_delete_all_conversations():
 
 # ==================== UNIFIED API (Auto-switches based on DATABASE_TYPE) ====================
 
+
+def _owner_matches(conv_username: Optional[str], requesting_username: Optional[str]) -> bool:
+    """Check if *requesting_username* is allowed to access a conversation owned by *conv_username*.
+
+    Rules:
+    - requesting_username=None  → no filtering (backwards-compat / internal calls)
+    - requesting_username="guest" → may access conversations owned by "guest" OR ownerless (None)
+    - requesting_username=<name> → may access only conversations owned by that exact name
+    """
+    if requesting_username is None:
+        return True
+    if requesting_username == "guest":
+        return conv_username in (None, "guest")
+    return conv_username == requesting_username
+
+
 def create_conversation(
     conversation_id: str,
     models: Optional[List[str]] = None,
@@ -403,6 +422,7 @@ def create_conversation(
     username: Optional[str] = None,
     execution_mode: Optional[str] = None,
     router_type: Optional[str] = None,
+    system_prompt: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create a new conversation.
@@ -412,34 +432,44 @@ def create_conversation(
         models: Optional list of council model IDs
         chairman: Optional chairman/judge model ID
         username: Optional username of the user who created the conversation
+        system_prompt: Optional system prompt for the conversation (e.g., TTCC mode)
 
     Returns:
         New conversation dict
     """
     if is_using_database():
-        conv = _db_create_conversation(conversation_id, models, chairman, username, execution_mode, router_type)
+        conv = _db_create_conversation(conversation_id, models, chairman, username, execution_mode, router_type, system_prompt)
     else:
-        conv = _json_create_conversation(conversation_id, models, chairman, username, execution_mode, router_type)
+        conv = _json_create_conversation(conversation_id, models, chairman, username, execution_mode, router_type, system_prompt)
 
     return _normalize_conversation(conv)
 
 
-def get_conversation(conversation_id: str) -> Optional[Dict[str, Any]]:
+def get_conversation(conversation_id: str, *, username: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Load a conversation from storage.
 
     Args:
         conversation_id: Unique identifier for the conversation
+        username: If provided, enforce ownership (return None on mismatch)
 
     Returns:
-        Conversation dict or None if not found
+        Conversation dict or None if not found / not owned
     """
     if is_using_database():
         conv = _db_get_conversation(conversation_id)
     else:
         conv = _json_get_conversation(conversation_id)
 
-    return _normalize_conversation(conv) if conv else None
+    if conv is None:
+        return None
+
+    conv = _normalize_conversation(conv)
+
+    if not _owner_matches(conv.get("username"), username):
+        return None
+
+    return conv
 
 
 def save_conversation(conversation: Dict[str, Any]):
@@ -482,6 +512,7 @@ def _normalize_conversation(conversation: Optional[Dict[str, Any]]) -> Optional[
         conversation = conversation.copy()
         conversation["execution_mode"] = conversation.get("execution_mode") or models.get("execution_mode")
         conversation["router_type"] = conversation.get("router_type") or models.get("router_type")
+        conversation["system_prompt"] = conversation.get("system_prompt") or models.get("system_prompt")
         conversation["models"] = models.get("models")
 
     # Backwards compatibility: infer router_type if missing.
@@ -493,16 +524,26 @@ def _normalize_conversation(conversation: Optional[Dict[str, Any]]) -> Optional[
     return conversation
 
 
-def list_conversations() -> List[Dict[str, Any]]:
+def list_conversations(*, username: Optional[str] = None) -> List[Dict[str, Any]]:
     """
-    List all conversations (metadata only).
+    List conversations (metadata only).
+
+    Args:
+        username: If provided, return only conversations owned by this user.
+                  "guest" also includes ownerless (legacy) conversations.
 
     Returns:
         List of conversation metadata dicts
     """
     if is_using_database():
-        return _db_list_conversations()
-    return _json_list_conversations()
+        all_convs = _db_list_conversations()
+    else:
+        all_convs = _json_list_conversations()
+
+    if username is None:
+        return all_convs
+
+    return [c for c in all_convs if _owner_matches(c.get("username"), username)]
 
 
 def add_user_message(conversation_id: str, content: str):
@@ -582,39 +623,48 @@ def add_assistant_message(
     _json_update_conversation(conversation_id, _update)
 
 
-def update_conversation_title(conversation_id: str, title: str):
+def update_conversation_title(conversation_id: str, title: str, *, username: Optional[str] = None):
     """
     Update the title of a conversation.
 
     Args:
         conversation_id: Conversation identifier
         title: New title for the conversation
-    """
-    if is_using_database():
-        conversation = get_conversation(conversation_id)
-        if conversation is None:
-            raise ValueError(f"Conversation {conversation_id} not found")
+        username: If provided, enforce ownership
 
-        conversation["title"] = title
-        save_conversation(conversation)
+    Raises:
+        ValueError: If conversation not found or ownership mismatch
+    """
+    conv = get_conversation(conversation_id, username=username)
+    if conv is None:
+        raise ValueError(f"Conversation {conversation_id} not found")
+
+    if is_using_database():
+        conv["title"] = title
+        save_conversation(conv)
         return
 
-    def _update(conv: Dict[str, Any]) -> None:
-        conv["title"] = title
+    def _update(c: Dict[str, Any]) -> None:
+        c["title"] = title
 
     _json_update_conversation(conversation_id, _update)
 
 
-def delete_conversation(conversation_id: str) -> bool:
+def delete_conversation(conversation_id: str, *, username: Optional[str] = None) -> bool:
     """
     Delete a conversation.
 
     Args:
         conversation_id: Conversation identifier
+        username: If provided, enforce ownership (return False on mismatch)
 
     Returns:
-        True if deleted, False if not found
+        True if deleted, False if not found or not owned
     """
+    conv = get_conversation(conversation_id, username=username)
+    if conv is None:
+        return False
+
     if is_using_database():
         return _db_delete_conversation(conversation_id)
 
@@ -625,9 +675,24 @@ def delete_conversation(conversation_id: str) -> bool:
     return False
 
 
-def delete_all_conversations():
-    """Delete all conversations."""
-    if is_using_database():
-        _db_delete_all_conversations()
-    else:
-        _json_delete_all_conversations()
+def delete_all_conversations(*, username: Optional[str] = None):
+    """Delete conversations. If username is provided, only delete that user's conversations.
+
+    When username="guest", also deletes ownerless (legacy) conversations.
+    When username=None, deletes everything (backwards-compat).
+    """
+    if username is None:
+        if is_using_database():
+            _db_delete_all_conversations()
+        else:
+            _json_delete_all_conversations()
+        return
+
+    # User-scoped deletion: list owned conversations and delete each.
+    owned = list_conversations(username=username)
+    for conv_meta in owned:
+        # Use unscoped delete since we already verified ownership via list.
+        if is_using_database():
+            _db_delete_conversation(conv_meta["id"])
+        else:
+            _json_delete_conversation(conv_meta["id"])

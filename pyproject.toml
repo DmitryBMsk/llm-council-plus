@@ -1,6 +1,6 @@
 [project]
 name = "llm-council"
-version = "1.2.9"
+version = "1.3.1"
 description = "Multi-LLM Council with democratic voting - Ask multiple AI models and let them evaluate each other"
 authors = [{name = "LLM Council Contributors"}]
 license = {text = "MIT"}
@@ -8,43 +8,79 @@ keywords = ["llm", "ai", "council", "multiple-models", "openrouter", "chatbot"]
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    # Core web framework
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "python-dotenv>=1.0.0",
     "httpx>=0.27.0",
     "pydantic>=2.9.0",
-    # Feature 2: Database support
+    "python-multipart>=0.0.21",
+    # Auth
+    "pyjwt>=2.11.0",
+    "bcrypt>=5.0.0",
+    # Database
     "sqlalchemy>=2.0.0",
     "alembic>=1.13.0",
-    "psycopg2-binary>=2.9.0",  # PostgreSQL
-    "pymysql>=1.1.0",          # MySQL
-    # Feature 4: Tools (FREE)
+    "pymysql>=1.1.0",
+    # PDF / file parsing
+    "pymupdf>=1.26.7",
+    "pymupdf4llm>=0.2.9",
+    # Token counting & optimization
+    "python-toon>=0.1.3",
+    "tiktoken>=0.12.0",
+    # Search providers
+    "ddgs>=9.10.0",
+    "exa-py>=2.3.0",
+    "tavily-python>=0.7.21",
+    # Google Drive integration
+    "google-api-python-client>=2.189.0",
+    "google-auth>=2.45.0",
+    # Tools (LangChain + free tool integrations)
+    "langchain>=0.1.0",
+    "langchain-community>=0.0.20",
     "wikipedia>=1.4.0",
     "arxiv>=2.0.0",
     "duckduckgo-search>=4.0.0",
+]
+
+[project.optional-dependencies]
+# Packages with native build deps that fail on some platforms (macOS Intel, etc.)
+# yfinance pulls in curl-cffi; sentence-transformers pulls in torch
+finance = [
     "yfinance>=0.2.0",
-    # Feature 4: Memory (local embeddings - FREE)
+]
+database = [
+    "psycopg2-binary>=2.9.0",
+]
+embeddings = [
     "chromadb>=0.4.0",
     "sentence-transformers>=2.2.0",
-    # Optional LangChain integration
-    "langchain>=0.1.0",
-    "langchain-community>=0.0.20",
-    "python-multipart>=0.0.21",
-    "ddgs>=9.10.0",
-    "pyjwt>=2.11.0",
-    "bcrypt>=5.0.0",
-    "pymupdf>=1.26.7",
-    "pymupdf4llm>=0.2.9",
-    "google-api-python-client>=2.189.0",
-    "google-auth>=2.45.0",
-    "python-toon>=0.1.3",
-    "tiktoken>=0.12.0",
-    "exa-py>=2.3.0",
-    "tavily-python>=0.7.21",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
+    "ruff>=0.8.0",
 ]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "E402",   # module-level import not at top (intentional in FastAPI apps)
+    "E712",   # comparison to True/False
+    "E741",   # ambiguous variable name
+    "F841",   # local variable assigned but never used (pre-existing, clean up later)
+]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+python_files = ["test_*.py"]
