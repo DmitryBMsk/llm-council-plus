@@ -98,6 +98,9 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
   const [newPresetName, setNewPresetName] = useState('');
   const [pendingPreset, setPendingPreset] = useState(null);
 
+  // Flag to prevent loadLastUsedSelection from reverting a user-initiated router switch
+  const userChangedRouter = useRef(false);
+
   // Custom system prompt
   const [customSystemPrompt, setCustomSystemPrompt] = useState('');
 
@@ -174,9 +177,6 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
     try {
       const data = await api.getModels({ routerType: forcedRouterType || routerType });
       setAllModels(data.models || []);
-      if (data.router_type) {
-        setRouterType(data.router_type);
-      }
       // Get max_models from backend config if provided
       if (data.max_models) {
         setMaxModels(data.max_models);
@@ -190,6 +190,10 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
   };
 
   const loadLastUsedSelection = () => {
+    if (userChangedRouter.current) {
+      userChangedRouter.current = false;
+      return;
+    }
     try {
       const saved = localStorage.getItem(LAST_USED_KEY);
       if (saved) {
@@ -546,6 +550,7 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
   };
 
   const handleRouterTypeChange = async (nextType) => {
+    userChangedRouter.current = true;
     setRouterType(nextType);
     setSelectedModels([]);
     setChairmanModel('');
@@ -829,16 +834,27 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
         <div className="selected-models-section" style={{ paddingTop: 0 }}>
           <h3>Router</h3>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <select
-              value={routerType}
-              onChange={(e) => handleRouterTypeChange(e.target.value)}
-              className="model-selector-select"
-            >
-              <option value="openrouter">OpenRouter</option>
-              <option value="ollama">Ollama (Local)</option>
-            </select>
-            <div style={{ opacity: 0.8, fontSize: '13px', lineHeight: 1.4 }}>
-              Select the provider for this conversation. No fallback.
+            <div className="router-switch">
+              <span
+                className={`router-switch-label ${routerType === 'ollama' ? 'active' : ''}`}
+                onClick={() => routerType !== 'ollama' && handleRouterTypeChange('ollama')}
+              >
+                Ollama
+              </span>
+              <button
+                type="button"
+                className={`router-switch-track ${routerType === 'openrouter' ? 'on' : ''}`}
+                onClick={() => handleRouterTypeChange(routerType === 'ollama' ? 'openrouter' : 'ollama')}
+                aria-label="Toggle router type"
+              >
+                <span className="router-switch-thumb" />
+              </button>
+              <span
+                className={`router-switch-label ${routerType === 'openrouter' ? 'active' : ''}`}
+                onClick={() => routerType !== 'openrouter' && handleRouterTypeChange('openrouter')}
+              >
+                OpenRouter
+              </span>
             </div>
           </div>
         </div>
