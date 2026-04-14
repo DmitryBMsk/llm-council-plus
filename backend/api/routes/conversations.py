@@ -27,6 +27,96 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["conversations"])
 
 
+def _looks_like_ollama_model(model: str) -> bool:
+    """Return True if model string looks like an Ollama model (e.g. 'gemma3:latest')."""
+    return ":" in model and "/" not in model
+
+
+def _looks_like_openrouter_model(model: str) -> bool:
+    """Return True if model string looks like an OpenRouter model (e.g. 'openai/gpt-4o')."""
+    return "/" in model
+
+
+def _resolve_router_type(
+    raw_value: Optional[str],
+    source_label: str,
+    models: Optional[list] = None,
+    chairman: Optional[str] = None,
+    conversation_id: Optional[str] = None,
+) -> str:
+    """Resolve router_type with logging, fallback tracking, and model cross-validation.
+
+    Returns the validated router_type string ("openrouter" or "ollama").
+    Logs a WARNING if models don't match the resolved router_type (dispatch
+    layer validation will reject the actual mismatch downstream).
+    """
+    # Step 1: determine value and source
+    if raw_value and raw_value.strip():
+        resolved = raw_value.strip().lower()
+        value_source = source_label
+    elif config.ROUTER_TYPE:
+        resolved = config.ROUTER_TYPE.strip().lower()
+        value_source = "config.ROUTER_TYPE"
+    else:
+        resolved = "openrouter"
+        value_source = "hardcoded default"
+
+    if resolved not in {"openrouter", "ollama"}:
+        logger.warning(
+            "router_type resolved to invalid value %r (source: %s), falling back to config",
+            resolved, value_source,
+        )
+        resolved = (config.ROUTER_TYPE or "openrouter").strip().lower()
+        value_source = "config fallback after invalid value"
+
+    logger.debug(
+        "router_type resolved: raw=%r, resolved=%r, source=%s, conversation_id=%s",
+        raw_value, resolved, value_source, conversation_id,
+    )
+
+    # Step 2: cross-validate models against router_type
+    all_models = list(models or [])
+    if chairman:
+        all_models.append(chairman)
+
+    if all_models:
+        ollama_models = [m for m in all_models if _looks_like_ollama_model(m)]
+        openrouter_models = [m for m in all_models if _looks_like_openrouter_model(m)]
+
+        if resolved == "openrouter" and ollama_models and not openrouter_models:
+            logger.warning(
+                "router_type is 'openrouter' but ALL models look like Ollama models %r — "
+                "this will likely fail at dispatch validation (conversation_id=%s)",
+                ollama_models, conversation_id,
+            )
+        elif resolved == "ollama" and openrouter_models and not ollama_models:
+            logger.warning(
+                "router_type is 'ollama' but ALL models look like OpenRouter models %r — "
+                "this will likely fail at dispatch validation (conversation_id=%s)",
+                openrouter_models, conversation_id,
+            )
+        elif resolved == "openrouter" and ollama_models:
+            logger.warning(
+                "router_type is 'openrouter' but some models look like Ollama models: %r "
+                "(conversation_id=%s)",
+                ollama_models, conversation_id,
+            )
+        elif resolved == "ollama" and openrouter_models:
+            logger.warning(
+                "router_type is 'ollama' but some models look like OpenRouter models: %r "
+                "(conversation_id=%s)",
+                openrouter_models, conversation_id,
+            )
+
+    if all_models:
+        logger.debug(
+            "council_models=%r, chairman=%r (conversation_id=%s)",
+            models, chairman, conversation_id,
+        )
+
+    return resolved
+
+
 class CreateConversationRequest(BaseModel):
     """Request to create a new conversation."""
     models: Optional[List[str]] = Field(default=None, max_length=20)  # Council models (max 20)
@@ -160,7 +250,12 @@ async def create_conversation(
 ):
     """Create a new conversation. Requires authentication."""
     # Validate chairman model context length if specified
-    router_type = (getattr(request, "router_type", None) or config.ROUTER_TYPE or "openrouter").strip().lower()
+    router_type = _resolve_router_type(
+        raw_value=getattr(request, "router_type", None),
+        source_label="request.router_type",
+        models=getattr(request, "models", None),
+        chairman=getattr(request, "chairman", None),
+    )
     async with _get_models_cache_lock():
         cache_entry = _models_cache.get(router_type)
     if request.chairman and cache_entry and cache_entry.get("data"):
@@ -436,9 +531,13 @@ async def send_message_stream(
     conv_models = conversation.get("models")
     conv_chairman = conversation.get("chairman")
     execution_mode = (conversation.get("execution_mode") or "full").strip().lower()
-    router_type = (conversation.get("router_type") or config.ROUTER_TYPE or "openrouter").strip().lower()
-    if router_type not in {"openrouter", "ollama"}:
-        router_type = config.ROUTER_TYPE
+    router_type = _resolve_router_type(
+        raw_value=conversation.get("router_type"),
+        source_label="conversation storage",
+        models=conv_models,
+        chairman=conv_chairman,
+        conversation_id=conversation_id,
+    )
     if execution_mode not in {"chat_only", "chat_ranking", "full"}:
         execution_mode = "full"
 
