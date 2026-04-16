@@ -47,7 +47,7 @@ describe('auth token via localStorage', () => {
   it('sends Authorization header when a valid token exists', async () => {
     const futureMs = Date.now() + 60_000
     localStorage.setItem(
-      'llm-council-auth',
+      'llm-council-plus-auth',
       JSON.stringify({ state: { token: 'tok123', expiresAt: futureMs } })
     )
 
@@ -62,7 +62,7 @@ describe('auth token via localStorage', () => {
   it('omits Authorization header when token is expired', async () => {
     const pastMs = Date.now() - 60_000
     localStorage.setItem(
-      'llm-council-auth',
+      'llm-council-plus-auth',
       JSON.stringify({ state: { token: 'old', expiresAt: pastMs } })
     )
 
@@ -210,7 +210,7 @@ describe('api.sendMessageStream', () => {
 
 describe('401 handling', () => {
   it('clears localStorage and reloads on 401', async () => {
-    localStorage.setItem('llm-council-auth', JSON.stringify({ state: { token: 'x', expiresAt: Date.now() + 60_000 } }))
+    localStorage.setItem('llm-council-plus-auth', JSON.stringify({ state: { token: 'x', expiresAt: Date.now() + 60_000 } }))
 
     // Mock window.location.reload
     const reloadMock = vi.fn()
@@ -227,7 +227,7 @@ describe('401 handling', () => {
     })
 
     await expect(api.listConversations()).rejects.toThrow('Session expired')
-    expect(localStorage.getItem('llm-council-auth')).toBeNull()
+    expect(localStorage.getItem('llm-council-plus-auth')).toBeNull()
     expect(reloadMock).toHaveBeenCalled()
   })
 })
