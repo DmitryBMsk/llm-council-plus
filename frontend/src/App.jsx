@@ -630,7 +630,7 @@ function App() {
     }
   };
 
-  const handleAbortStream = () => {
+  const handleAbortStream = useCallback(() => {
     if (!isLoading) return;
     streamAbortRequestedRef.current = true;
     try {
@@ -638,7 +638,7 @@ function App() {
     } catch (e) {
       console.error('Failed to abort stream:', e);
     }
-  };
+  }, [isLoading]);
 
   // Show loading while checking setup/auth status
   if (!setupChecked) {

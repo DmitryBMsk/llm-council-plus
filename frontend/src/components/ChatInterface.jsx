@@ -244,7 +244,7 @@ export default function ChatInterface({
     });
 
     if (supportedFiles.length === 0) {
-      alert('No supported files found. Supported: PDF, TXT, MD, MDX, JPG, PNG, GIF, WebP');
+      addToast('No supported files found. Supported: PDF, TXT, MD, MDX, JPG, PNG, GIF, WebP', 'warning');
       return;
     }
 
@@ -267,7 +267,7 @@ export default function ChatInterface({
       const messages = invalidFiles.map(
         (f) => `"${f.name}" (${formatFileSize(f.size)}) exceeds ${f.isImage ? 'image' : 'file'} limit of ${formatFileSize(f.maxSize)}`
       );
-      alert(`File size limit exceeded:\n\n${messages.join('\n')}`);
+      addToast(`File size limit exceeded: ${messages.join('; ')}`, 'warning');
       return;
     }
 
@@ -279,7 +279,7 @@ export default function ChatInterface({
       }
     } catch (error) {
       console.error('File drop upload failed:', error);
-      alert(`Failed to upload file: ${error.message}`);
+      addToast(`Failed to upload file: ${error.message}`, 'error');
     } finally {
       setIsUploading(false);
     }
