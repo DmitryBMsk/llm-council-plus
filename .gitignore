@@ -30,6 +30,23 @@ frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 
+# Top-level node_modules (e.g. for Playwright e2e tests)
+node_modules/
+
+# Playwright test output
+test-results/
+playwright-report/
+
+# Working artifacts produced by AI agents (Claude / Codex)
+findings.md
+findings_*.md
+progress.md
+task_plan.md
+output/
+
+# GitNexus cache
+.gitnexus/
+
 # IDE
 .idea/
 .vscode/
