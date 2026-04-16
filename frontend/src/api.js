@@ -381,37 +381,48 @@ export const api = {
     const decoder = new TextDecoder();
     let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
 
-      // Keep the last incomplete line in the buffer
-      buffer = lines.pop() || '';
+        // Keep the last incomplete line in the buffer
+        buffer = lines.pop() || '';
 
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          try {
-            const event = JSON.parse(data);
-            onEvent(event.type, event);
-          } catch (e) {
-            console.error('Failed to parse SSE event:', e);
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6);
+            try {
+              const event = JSON.parse(data);
+              onEvent(event.type, event);
+            } catch (e) {
+              console.error('Failed to parse SSE event:', e);
+            }
           }
         }
       }
-    }
 
-    // Process any remaining data in buffer
-    if (buffer.startsWith('data: ')) {
-      const data = buffer.slice(6);
+      // Process any remaining data in buffer
+      if (buffer.startsWith('data: ')) {
+        const data = buffer.slice(6);
+        try {
+          const event = JSON.parse(data);
+          onEvent(event.type, event);
+        } catch {
+          // Ignore incomplete final chunk
+        }
+      }
+    } finally {
+      // Always release the underlying connection. cancel() also releases the
+      // lock; swallow any error because by this point we're either done or
+      // the consumer aborted and we just want to free the socket.
       try {
-        const event = JSON.parse(data);
-        onEvent(event.type, event);
+        await reader.cancel();
       } catch {
-        // Ignore incomplete final chunk
+        // ignore
       }
     }
   },
