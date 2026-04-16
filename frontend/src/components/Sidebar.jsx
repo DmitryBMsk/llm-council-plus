@@ -355,17 +355,6 @@ export default function Sidebar({
 }
 
 Sidebar.propTypes = {
-  conversations: PropTypes.array.isRequired,
-  currentConversationId: PropTypes.string,
-  onSelectConversation: PropTypes.func.isRequired,
-  onNewConversation: PropTypes.func.isRequired,
-  onOpenSettings: PropTypes.func,
-  onDeleteConversation: PropTypes.func.isRequired,
-  onDeleteAllConversations: PropTypes.func.isRequired,
-  onUpdateTitle: PropTypes.func,
-};
-
-Sidebar.propTypes = {
   conversations: PropTypes.arrayOf(
     PropTypes.shape({
       id: PropTypes.string.isRequired,
@@ -378,6 +367,7 @@ Sidebar.propTypes = {
   currentConversationId: PropTypes.string,
   onSelectConversation: PropTypes.func.isRequired,
   onNewConversation: PropTypes.func.isRequired,
+  onOpenSettings: PropTypes.func,
   onDeleteConversation: PropTypes.func.isRequired,
   onDeleteAllConversations: PropTypes.func.isRequired,
   onUpdateTitle: PropTypes.func,
