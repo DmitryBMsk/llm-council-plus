@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import PropTypes from 'prop-types';
 import { api } from '../api';
 import './SetupWizard.css';
 
@@ -436,3 +437,7 @@ export default function SetupWizard({ onComplete }) {
     </div>
   );
 }
+
+SetupWizard.propTypes = {
+  onComplete: PropTypes.func.isRequired,
+};

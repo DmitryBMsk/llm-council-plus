@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { api } from '../api';
 import './LoginScreen.css';
 
@@ -197,3 +198,7 @@ export default function LoginScreen({ onLogin }) {
     </div>
   );
 }
+
+LoginScreen.propTypes = {
+  onLogin: PropTypes.func.isRequired,
+};

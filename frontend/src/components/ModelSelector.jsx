@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import PropTypes from 'prop-types';
 import { api } from '../api';
 import './ModelSelector.css';
 
@@ -1099,5 +1100,11 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
     </div>
   );
 }
+
+ModelSelector.propTypes = {
+  isOpen: PropTypes.bool,
+  onClose: PropTypes.func,
+  onConfirm: PropTypes.func,
+};
 
 export { BUILT_IN_PRESETS as PRESETS };
