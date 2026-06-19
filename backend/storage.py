@@ -555,6 +555,11 @@ def add_user_message(conversation_id: str, content: str):
         content: User message content
     """
     if is_using_database():
+        # NOTE (B0.4): this read-modify-write is NOT atomic — concurrent appends
+        # to the same conversation can lose updates. The JSON backend is the
+        # supported concurrent-safe path (file-locked via _json_update_conversation).
+        # If the SQL backend becomes a production target, replace this with an
+        # atomic transaction / SELECT ... FOR UPDATE.
         conversation = get_conversation(conversation_id)
         if conversation is None:
             raise ValueError(f"Conversation {conversation_id} not found")
@@ -609,6 +614,7 @@ def add_assistant_message(
         message["metadata"] = metadata
 
     if is_using_database():
+        # NOTE (B0.4): non-atomic read-modify-write — see add_user_message.
         conversation = get_conversation(conversation_id)
         if conversation is None:
             raise ValueError(f"Conversation {conversation_id} not found")
@@ -640,6 +646,7 @@ def update_conversation_title(conversation_id: str, title: str, *, username: Opt
         raise ValueError(f"Conversation {conversation_id} not found")
 
     if is_using_database():
+        # NOTE (B0.4): non-atomic read-modify-write — see add_user_message.
         conv["title"] = title
         save_conversation(conv)
         return

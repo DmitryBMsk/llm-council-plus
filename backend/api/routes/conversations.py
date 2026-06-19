@@ -267,12 +267,21 @@ async def upload_file(
         # Read file content
         file_content = await file.read()
 
-        # Check file size for images (max 20MB)
+        # Enforce size limits BEFORE parsing. PDFs especially can be small on
+        # disk yet expand to gigabytes of memory while rendering (a "PDF bomb"),
+        # so the cap must run before parse_file(), not after.
         max_image_size = 20 * 1024 * 1024  # 20MB
-        if is_image_file(filename) and len(file_content) > max_image_size:
+        max_file_size = 20 * 1024 * 1024   # 20MB for PDF / text / markdown
+        if is_image_file(filename):
+            if len(file_content) > max_image_size:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Image file too large. Maximum size is 20MB."
+                )
+        elif len(file_content) > max_file_size:
             raise HTTPException(
                 status_code=400,
-                detail="Image file too large. Maximum size is 20MB."
+                detail="File too large. Maximum size is 20MB."
             )
 
         # Parse the file

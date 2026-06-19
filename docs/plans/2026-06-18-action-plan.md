@@ -95,7 +95,7 @@ see TOON compression %, not whether a query cost $0.01 or $1.00. File:
 
 ### P0 — security + data integrity
 
-**B0.1 — Setup endpoint open indefinitely in Ollama mode** · M · new — **highest-priority security item**
+**B0.1 — Setup endpoint open indefinitely in Ollama mode** · M · new — **highest-priority security item** — ✅ DONE 2026-06-19 (branch `p0-security-correctness`): durable `data/.setup_complete` marker gates the endpoint regardless of router type / .env presence. **Residual (accepted, user chose marker over SETUP_TOKEN):** the *first-run window* is still unauthenticated — on a fresh deploy an attacker who races the operator can run setup first and lock them out. Rate-limiting or `SETUP_TOKEN` remains the defense for that window (tracked, not done). NOTE: T4 still blocked — setup still writes secrets to `.env`; only the gate moved off `.env`.
 WHAT: gate `/api/setup/config` independent of router type — disable after first run via an
 env-backed flag (not just the `.env` file check, which fails when compose uses `environment:` vars)
 and/or require a `SETUP_TOKEN`; add rate limiting. WHY: in Ollama deployments the line-93 gate
@@ -109,14 +109,14 @@ See Quick Win #2. File: `frontend/src/components/SearchContext.jsx:139-146`. Val
 `new URL()` in try/catch or a scheme allowlist. Gated: requires a poisoned/compromised search API,
 but the sink is real and React 19 does not block `javascript:`.
 
-**B0.3 — PDF/text uploads not size-checked before parsing (DoS)** · M · new
+**B0.3 — PDF/text uploads not size-checked before parsing (DoS)** · M · new — 🟡 PARTIAL 2026-06-19: added 20MB pre-parse cap for all file types in `/api/upload` (reduces large-file memory pressure). **Still OPEN (P1):** a PDF *decompression bomb* is small on disk and huge in memory, so it slips under the byte cap and still detonates in `pymupdf4llm.to_markdown`. Real fix = parse timeout + memory/RSS bound (needs a killable subprocess, not `signal.alarm` on a worker thread).
 WHAT: enforce a pre-parse byte limit (~20 MB) for PDF/text before `parse_file()`, and add a
 pymupdf render timeout. WHY: the size check at `:272` runs only for images; a <25 MB PDF bomb expands
 in pymupdf before the 50k-char truncation at `:296` ever applies. Nginx `client_max_body_size 25m`
 only protects the proxied path, not direct backend access inside the Docker network. Files:
 `backend/api/routes/conversations.py:266-279,296-300`, `backend/file_parser.py:33-40`.
 
-**B0.4 — Race condition in DB storage read-modify-write** · M · new — **DB-mode only (JSON is default)**
+**B0.4 — Race condition in DB storage read-modify-write** · M · new — **DB-mode only (JSON is default)** — ⚠️ DEFERRED 2026-06-19 (user: JSON is prod, DB unused): documented the non-atomic RMW at all 3 sites in `storage.py`; full atomic-txn fix deferred until SQL backend is a prod target.
 (merges `race-db-storage-add-user` + `-add-assistant` + `-title-update` — one root cause)
 WHAT: add an atomic `_db_update_conversation()` mirroring the JSON `_json_update_conversation()`
 file-lock pattern (single transaction or `SELECT ... FOR UPDATE`). WHY: `add_user_message`,
