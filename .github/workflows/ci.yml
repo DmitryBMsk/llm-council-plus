@@ -15,18 +15,16 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.12"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
       - name: Install dependencies
-        run: |
-          uv venv .venv
-          uv pip install ruff pytest pytest-asyncio --python .venv/bin/python
-          uv pip install fastapi uvicorn python-dotenv httpx pydantic sqlalchemy \
-            psycopg2-binary pymysql python-multipart pyjwt bcrypt pymupdf \
-            pymupdf4llm tiktoken starlette --python .venv/bin/python
+        # Install from the lockfile so CI tests the same dependency closure as
+        # production (the previous hand-written list drifted from pyproject).
+        # --no-install-project: the app is run as a source tree, not a built package.
+        run: uv sync --frozen --no-install-project
 
       - name: Lint (ruff)
         run: .venv/bin/ruff check backend/

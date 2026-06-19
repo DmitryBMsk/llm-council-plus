@@ -52,12 +52,16 @@ export default function Sidebar({
   }, [conversations, userFilter, searchQuery]);
 
   useEffect(() => {
-    api.getVersion().then(({ version }) => setVersion(version));
-    api.getUsers().then(({ users: fetchedUsers }) => {
-      if (fetchedUsers && fetchedUsers.length > 0) {
-        setUsers(['All', ...fetchedUsers]);
-      }
-    });
+    api.getVersion()
+      .then(({ version }) => setVersion(version))
+      .catch((err) => console.error('Failed to load version:', err));
+    api.getUsers()
+      .then(({ users: fetchedUsers }) => {
+        if (fetchedUsers && fetchedUsers.length > 0) {
+          setUsers(['All', ...fetchedUsers]);
+        }
+      })
+      .catch((err) => console.error('Failed to load users:', err));
   }, []);
 
   // Feature 5: Title editing handlers

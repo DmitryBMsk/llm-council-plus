@@ -462,7 +462,10 @@ function App() {
               const newLastMsg = {
                 ...lastMsg,
                 stage2: event.data,
-                metadata: event.metadata,
+                // Merge, don't replace: the Stage 2 event does not carry
+                // tool_outputs set during Stage 1, and a wholesale replace would
+                // drop them (SearchContext reads msg.metadata.tool_outputs).
+                metadata: { ...(lastMsg.metadata || {}), ...(event.metadata || {}) },
                 loading: { ...currentLoading, stage2: false },
                 timings: {
                   ...currentTimings,
