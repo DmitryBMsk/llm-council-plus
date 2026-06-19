@@ -68,9 +68,13 @@ class TestMultimodalSupport:
         assert content == "Hello"
 
     @pytest.mark.asyncio
-    async def test_query_model_multimodal_payload(self):
+    async def test_query_model_multimodal_payload(self, monkeypatch):
         """Test that query_model sends correct payload for multimodal."""
         from ..openrouter import query_model
+
+        # query_model validates the OpenRouter key on every call; set a test key
+        # so the test does not depend on a real env-provided key (CI has none).
+        monkeypatch.setattr("backend.config.OPENROUTER_API_KEY", "sk-test-key", raising=False)
 
         # Mock the httpx client
         mock_response = MagicMock()

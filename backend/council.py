@@ -970,6 +970,19 @@ async def stage3_synthesize_final(
         for result in stage1_results
         if result.get('response')
     ]
+
+    # All Stage 1 entries are present but none carries a usable response (every
+    # model errored/was rate-limited). The `if not stage1_results` guard above
+    # does not catch this because error entries keep the list non-empty. Do not
+    # ask the chairman to synthesize from nothing.
+    if not stage1_data:
+        logger.error("[STAGE3] No usable Stage 1 responses to synthesize")
+        return {
+            "model": chairman_model,
+            "response": "Error: No model responses were collected. All models may have failed or been rate-limited. Please try again.",
+            "error": True
+        }
+
     stage1_toon = encode_for_llm(stage1_data)
     stage1_text = f"Data in TOON format:\n{stage1_toon}"
 

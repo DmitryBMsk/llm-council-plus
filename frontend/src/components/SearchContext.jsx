@@ -62,6 +62,19 @@ function getDomain(url) {
   }
 }
 
+// Only allow http(s) links. Search results come from external providers, so a
+// poisoned result could carry a `javascript:`/`data:` URL — React does not block
+// those in href. Returns the URL if safe to render as a link, else null.
+function safeHref(url) {
+  if (!url || typeof url !== 'string') return null;
+  try {
+    const u = new URL(url);
+    return (u.protocol === 'http:' || u.protocol === 'https:') ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeToolName(tool) {
   if (!tool) return '';
   // e.g. "web_search:duckduckgo" -> "DuckDuckGo"
@@ -131,13 +144,14 @@ export default function SearchContext({ toolOutputs }) {
                 <div className="search-context-results">
                   {e.parsed.map((r, i) => {
                     const domain = getDomain(r.url);
+                    const href = safeHref(r.url);
                     return (
                       <details key={i} className="search-context-result">
                         <summary className="search-context-result-summary">
                           <span className="search-context-result-title">
-                            {r.url ? (
+                            {href ? (
                               <a
-                                href={r.url}
+                                href={href}
                                 target="_blank"
                                 rel="noreferrer"
                                 onClick={(ev) => ev.stopPropagation()}
@@ -145,7 +159,7 @@ export default function SearchContext({ toolOutputs }) {
                                 {r.title || r.url}
                               </a>
                             ) : (
-                              <span>{r.title || 'Untitled result'}</span>
+                              <span>{r.title || r.url || 'Untitled result'}</span>
                             )}
                           </span>
                           {domain && <span className="search-context-result-domain">{domain}</span>}
