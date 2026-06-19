@@ -7,9 +7,45 @@ from pathlib import Path
 import json
 import os
 
+import logging
+
 from ... import config
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(tags=["setup"])
+
+
+def _env_path() -> Path:
+    """Location of the .env file the setup wizard reads/writes."""
+    return Path(__file__).parent.parent.parent.parent / ".env"
+
+
+def _setup_marker_path() -> Path:
+    """Path to the setup-complete marker.
+
+    Lives inside the data volume (DATA_DIR) so it survives restarts and works
+    regardless of router type or whether a writable .env exists — closing the
+    gap where Ollama / Docker-``environment:`` deployments left setup open.
+    """
+    return Path(config.DATA_DIR) / ".setup_complete"
+
+
+def _is_setup_complete() -> bool:
+    """True if the app has already been configured (any durable signal)."""
+    if _setup_marker_path().exists():
+        return True
+    # Existing OpenRouter configuration implies setup already ran.
+    if config.ROUTER_TYPE == "openrouter" and config.OPENROUTER_API_KEY:
+        return True
+    # Legacy signal: SETUP_COMPLETE written into a readable .env.
+    env_path = _env_path()
+    try:
+        if env_path.exists() and "SETUP_COMPLETE=true" in env_path.read_text():
+            return True
+    except OSError:
+        pass
+    return False
 
 
 class SetupConfigRequest(BaseModel):
@@ -86,29 +122,17 @@ async def save_setup_config(request: SetupConfigRequest):
     """
 
     # Find .env file location
-    env_path = Path(__file__).parent.parent.parent.parent / ".env"
+    env_path = _env_path()
 
-    # Security check: Only allow setup when not yet configured
-    # Check for SETUP_COMPLETE flag or existing valid configuration
-    if config.ROUTER_TYPE == "openrouter" and config.OPENROUTER_API_KEY:
+    # Security gate: refuse once the app has been configured. Uses a durable
+    # marker in the data volume so this holds for every deployment shape
+    # (Ollama, Docker ``environment:`` vars, missing/read-only .env) — not just
+    # OpenRouter-with-.env, which is the only case the old check covered.
+    if _is_setup_complete():
         raise HTTPException(
             status_code=403,
             detail="Application is already configured. Edit .env file manually to change settings."
         )
-
-    # For Ollama: check if setup was already completed (SETUP_COMPLETE flag in .env)
-    if env_path.exists():
-        try:
-            env_content = env_path.read_text()
-            if "SETUP_COMPLETE=true" in env_content:
-                raise HTTPException(
-                    status_code=403,
-                    detail="Application is already configured. Edit .env file manually to change settings."
-                )
-        except HTTPException:
-            raise  # Re-raise HTTP exceptions (don't swallow security checks)
-        except OSError:
-            pass  # If we can't read file, proceed with setup
 
     # Build new config lines
     updates = {}
@@ -203,6 +227,15 @@ async def save_setup_config(request: SetupConfigRequest):
     from ...auth import reload_auth
     config.reload_config()
     reload_auth()
+
+    # Record completion durably so the setup endpoint cannot be re-run, even on
+    # deployments without a writable .env (Docker `environment:` vars, Ollama).
+    marker = _setup_marker_path()
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("true\n")
+    except OSError as e:
+        logger.warning("Could not write setup-complete marker %s: %s", marker, e)
 
     return {
         "success": True,
