@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import PropTypes from 'prop-types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import Stage1 from './Stage1';
@@ -601,3 +602,17 @@ export default function ChatInterface({
     </div>
   );
 }
+
+ChatInterface.propTypes = {
+  conversation: PropTypes.object,
+  onSendMessage: PropTypes.func,
+  onAbort: PropTypes.func,
+  onUploadFile: PropTypes.func,
+  isLoading: PropTypes.bool,
+  webSearchAvailable: PropTypes.bool,
+  tavilyEnabled: PropTypes.bool,
+  exaEnabled: PropTypes.bool,
+  duckduckgoEnabled: PropTypes.bool,
+  braveEnabled: PropTypes.bool,
+  addToast: PropTypes.func,
+};

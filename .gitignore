@@ -46,6 +46,13 @@ output/
 
 # GitNexus cache
 .gitnexus/
+AGENTS.md
+
+# Playwright e2e test output
+e2e/screenshots/
+node_modules/
+test-results/
+playwright-report/
 
 # IDE
 .idea/

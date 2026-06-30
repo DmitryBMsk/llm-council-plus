@@ -1,5 +1,7 @@
 """FastAPI backend for LLM Council — application bootstrap."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
@@ -26,24 +28,25 @@ from .api.routes.models import router as models_router
 from .api.routes.conversations import router as conversations_router
 from .api.routes.drive import router as drive_router
 
-app = FastAPI(title="LLM Council API")
-
-# Initialize on startup
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database and validate configuration at startup."""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application startup/shutdown lifecycle."""
     # Validate JWT configuration if auth is enabled
     validate_jwt_config()
     # Initialize database tables if using database storage (Feature 2: Multi-DB support)
     init_database()
+    yield
+
+
+app = FastAPI(title="LLM Council API", lifespan=lifespan)
 
 # Enable CORS for local development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:5175", "http://localhost:3000", "http://localhost", "https://localhost", "http://127.0.0.1", "http://127.0.0.1:80"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 

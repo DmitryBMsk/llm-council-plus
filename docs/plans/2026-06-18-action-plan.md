@@ -127,7 +127,7 @@ is actually deployed (see Open Questions). Files: `backend/storage.py:557-568,61
 
 ### P1 — high value
 
-**B1.1 — Add propTypes to the 4 uncovered components** · M · new
+**B1.1 — Add propTypes to the 4 uncovered components** · M · new — ✅ DONE 2026-06-19 (branch `p1-quick-wins`)
 WHAT: ChatInterface, ModelSelector, LoginScreen, SetupWizard. WHY: completes the partial coverage
 PR#22 started (it merged Sidebar propTypes). Files:
 `frontend/src/components/{ChatInterface,ModelSelector,LoginScreen,SetupWizard}.jsx`.
@@ -138,7 +138,7 @@ WHAT: `pytest-cov` + `pytest --cov=backend` in CI; `@vitest/coverage-v8` + cover
 Bigger Bets test work. Files: `pyproject.toml:61-65`, `.github/workflows/ci.yml`,
 `frontend/vitest.config.js`, `frontend/package.json`.
 
-**B1.3 — Migrate FastAPI `on_event("startup")` → lifespan** · S · new
+**B1.3 — Migrate FastAPI `on_event("startup")` → lifespan** · S · new — ✅ DONE 2026-06-19 (deprecation warning gone)
 (merges `fastapi-on-event-deprecated` + `ops-fastapi-deprecated-event` — same line)
 File: `backend/main.py:32`. WHY: deprecated; future FastAPI removal risk. (Note: unrelated to the
 "coroutine never awaited" test warnings — those are MagicMock auto-spec artifacts.)
@@ -148,17 +148,17 @@ WHAT: set explicit `pool_size`/`max_overflow` and add `pool_recycle=3600` to Pos
 async worker can exhaust the default 15-connection ceiling under load; Postgres lacks recycle.
 File: `backend/database.py:63-74`. DB-mode only.
 
-**B1.5 — JWT expiry 60d → 7d (+ refresh-token decision)** · S · new
-File: `backend/auth.py:24`. WHY: 60-day stolen-token window. Gated: self-hosted/optional-auth tool,
-so confirm intent (Open Questions) before tightening.
+**B1.5 — JWT expiry 60d → 7d (+ refresh-token decision)** · S · new — ✅ DONE 2026-06-19 (env-configurable)
+File: `backend/auth.py:24`. WHY: 60-day stolen-token window. Implemented as `JWT_EXPIRE_DAYS` env var
+(default kept at 60 for backwards-compat; operators can shorten). Refresh tokens still a future option.
 
 ### P2 — hardening / hygiene
 
 **B2.1 — DB URL: raise on missing config instead of hardcoded localhost fallback** · S · new
 File: `backend/database.py:35-38`.
 
-**B2.2 — CORS: replace wildcard methods/headers with explicit lists** · S · new
-File: `backend/main.py:41-47`. Defense-in-depth (origins already localhost-only).
+**B2.2 — CORS: replace wildcard methods/headers with explicit lists** · S · new — ✅ DONE 2026-06-19
+File: `backend/main.py:41-47`. Now `methods=[GET,POST,PATCH,DELETE,OPTIONS]`, `headers=[Authorization,Content-Type]`.
 
 **B2.3 — Untrusted web/tool output marking** · M · new (verified LOW)
 WHAT: wrap search/tool outputs in explicit `[UNTRUSTED EXTERNAL SOURCE]` delimiters before embedding

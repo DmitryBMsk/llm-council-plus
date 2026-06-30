@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 
@@ -21,7 +22,21 @@ logger = logging.getLogger(__name__)
 
 # JWT Configuration
 JWT_ALGORITHM = "HS256"
-TOKEN_EXPIRE_DAYS = 60
+# Default JWT lifetime in days; override with the JWT_EXPIRE_DAYS env var.
+# A shorter window limits exposure if a token is leaked.
+DEFAULT_TOKEN_EXPIRE_DAYS = 60
+
+
+def _token_expire_days() -> int:
+    """JWT lifetime in days. Env-configurable and read per call so runtime
+    config changes take effect without restart."""
+    raw = os.getenv("JWT_EXPIRE_DAYS", str(DEFAULT_TOKEN_EXPIRE_DAYS))
+    try:
+        days = int(raw)
+    except (TypeError, ValueError):
+        logger.warning("Invalid JWT_EXPIRE_DAYS=%r; using default %d", raw, DEFAULT_TOKEN_EXPIRE_DAYS)
+        return DEFAULT_TOKEN_EXPIRE_DAYS
+    return days if days > 0 else DEFAULT_TOKEN_EXPIRE_DAYS
 
 
 def validate_jwt_config():
@@ -191,7 +206,7 @@ def create_token(username: str) -> tuple[str, int]:
         raise ValueError("JWT_SECRET environment variable must be set")
 
     now = datetime.now(timezone.utc)
-    expires = now + timedelta(days=TOKEN_EXPIRE_DAYS)
+    expires = now + timedelta(days=_token_expire_days())
 
     payload = {
         "sub": username,
