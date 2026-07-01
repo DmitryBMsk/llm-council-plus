@@ -66,17 +66,17 @@ def _parse_council_models(models_str: Optional[str], router_type: str) -> List[s
     if router_type == "ollama":
         return ["deepseek-r1:latest", "llama3.1:latest", "qwen3:latest", "gemma3:latest"]
     return [
-        "openai/gpt-5.1",
-        "google/gemini-3-pro-preview",
-        "anthropic/claude-sonnet-4.5",
-        "x-ai/grok-4",
+        "openai/gpt-5.5",
+        "google/gemini-3.1-pro-preview",
+        "anthropic/claude-sonnet-5",
+        "x-ai/grok-4.3",
     ]
 
 
 def _parse_chairman(chairman_str: Optional[str], router_type: str) -> str:
     if chairman_str:
         return chairman_str
-    return "gemma3:latest" if router_type == "ollama" else "google/gemini-3-pro-preview"
+    return "gemma3:latest" if router_type == "ollama" else "google/gemini-3.1-pro-preview"
 
 
 @dataclass(frozen=True)
@@ -91,7 +91,7 @@ class AppSettings:
 
     # Council
     council_models: List[str] = field(default_factory=list)
-    chairman_model: str = "google/gemini-3-pro-preview"
+    chairman_model: str = "google/gemini-3.1-pro-preview"
     max_council_models: int = 5
     min_chairman_context: int = 25000
 

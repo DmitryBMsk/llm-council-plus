@@ -4,7 +4,7 @@
 
 > **Inspired by [Andrej Karpathy's LLM Council](https://github.com/karpathy/llm-council)** - see his [original tweet](https://x.com/karpathy/status/1992381094667411768) about the concept.
 
-The idea of this repo is that instead of asking a question to your favorite LLM provider (e.g. OpenAI GPT 5.1, Google Gemini 3.0 Pro, Anthropic Claude Sonnet 4.5, xAI Grok 4, etc.), you can group them into your "LLM Council Plus" council. This is a containerized web app with a Setup Wizard that guides you through configuration. It uses OpenRouter to send your query to multiple LLMs, asks them to review and rank each other's work, and finally a Chairman LLM produces the final response.
+The idea of this repo is that instead of asking a question to your favorite LLM provider (e.g. OpenAI GPT-5.5, Google Gemini 3.1 Pro, Anthropic Claude Sonnet 5, xAI Grok 4.3, etc.), you can group them into your "LLM Council Plus" council. This is a containerized web app with a Setup Wizard that guides you through configuration. It uses OpenRouter to send your query to multiple LLMs, asks them to review and rank each other's work, and finally a Chairman LLM produces the final response.
 
 In a bit more detail, here is what happens when you submit a query:
 
