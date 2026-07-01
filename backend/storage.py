@@ -163,9 +163,12 @@ def _json_create_conversation(
     }
 
     path = get_conversation_path(conversation_id)
+    # Serialize before opening 'w' (which truncates) so a serialization error
+    # cannot leave a destroyed/partial file behind.
+    payload = json.dumps(conversation, indent=2)
     with open(path, 'w') as f:
         with file_lock(f, exclusive=True):
-            json.dump(conversation, f, indent=2)
+            f.write(payload)
 
     return conversation
 
@@ -177,9 +180,15 @@ def _json_get_conversation(conversation_id: str) -> Optional[Dict[str, Any]]:
     if not os.path.exists(path):
         return None
 
-    with open(path, 'r') as f:
-        with file_lock(f, exclusive=False):
-            return json.load(f)
+    try:
+        with open(path, 'r') as f:
+            with file_lock(f, exclusive=False):
+                return json.load(f)
+    except json.JSONDecodeError as e:
+        # A torn/corrupt file must not brick the conversation with 500s;
+        # treat it like a missing conversation (callers map None to 404).
+        logger.warning("Corrupt conversation file %s: %s", path, e)
+        return None
 
 
 def _json_save_conversation(conversation: Dict[str, Any]):
@@ -187,9 +196,12 @@ def _json_save_conversation(conversation: Dict[str, Any]):
     ensure_data_dir()
 
     path = get_conversation_path(conversation['id'])
+    # Serialize before opening 'w' (which truncates) so a serialization error
+    # cannot leave a destroyed/partial file behind.
+    payload = json.dumps(conversation, indent=2)
     with open(path, 'w') as f:
         with file_lock(f, exclusive=True):
-            json.dump(conversation, f, indent=2)
+            f.write(payload)
 
 
 def _json_update_conversation(conversation_id: str, update_fn: Callable[[Dict[str, Any]], None]) -> Dict[str, Any]:
@@ -210,9 +222,12 @@ def _json_update_conversation(conversation_id: str, update_fn: Callable[[Dict[st
             f.seek(0)
             conversation = json.load(f)
             update_fn(conversation)
+            # Serialize BEFORE truncating: if json.dumps raises (or the process
+            # dies mid-dump), the on-disk pre-image must stay intact.
+            payload = json.dumps(conversation, indent=2)
             f.seek(0)
             f.truncate()
-            json.dump(conversation, f, indent=2)
+            f.write(payload)
             f.flush()
             try:
                 os.fsync(f.fileno())

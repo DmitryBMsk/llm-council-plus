@@ -284,8 +284,9 @@ async def upload_file(
                 detail="File too large. Maximum size is 20MB."
             )
 
-        # Parse the file
-        parsed_content, file_type = parse_file(filename, file_content)
+        # Parse off the event loop: PDF parsing (pymupdf4llm) is CPU-bound and
+        # would otherwise stall every concurrent SSE stream.
+        parsed_content, file_type = await asyncio.to_thread(parse_file, filename, file_content)
 
         # Build response
         response = {
