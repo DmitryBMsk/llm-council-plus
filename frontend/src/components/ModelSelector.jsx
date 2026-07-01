@@ -20,8 +20,8 @@ const BUILT_IN_PRESETS = {
   ultra: {
     name: 'Ultra',
     description: 'Top-tier models for best quality',
-    modelPatterns: ['claude-opus', 'gpt-5.1', 'gemini-3-pro', 'gpt-4o'],
-    chairmanPattern: 'gemini-3-pro',
+    modelPatterns: ['claude-opus', 'gpt-5.5', 'gemini-3.1-pro', 'gpt-4o'],
+    chairmanPattern: 'gemini-3.1-pro',
   },
   budget: {
     name: 'Budget',

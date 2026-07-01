@@ -34,10 +34,10 @@ else:
         ]
     else:
         COUNCIL_MODELS = [
-            "openai/gpt-5.1",
-            "google/gemini-3-pro-preview",
-            "anthropic/claude-sonnet-4.5",
-            "x-ai/grok-4",
+            "openai/gpt-5.5",
+            "google/gemini-3.1-pro-preview",
+            "anthropic/claude-sonnet-5",
+            "x-ai/grok-4.3",
         ]
 
 # Maximum council models (default 5, can be overridden via .env)
@@ -53,7 +53,7 @@ if not CHAIRMAN_MODEL:
     if ROUTER_TYPE == "ollama":
         CHAIRMAN_MODEL = "gemma3:latest"
     else:
-        CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
+        CHAIRMAN_MODEL = "google/gemini-3.1-pro-preview"
 
 # Data directory for conversation storage
 DATA_DIR = os.getenv("DATA_DIR", "data/conversations")
