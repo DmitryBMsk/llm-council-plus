@@ -38,6 +38,11 @@ def _is_setup_complete() -> bool:
     # Existing OpenRouter configuration implies setup already ran.
     if config.ROUTER_TYPE == "openrouter" and config.OPENROUTER_API_KEY:
         return True
+    # Auth is configured: the wizard must never be able to overwrite it
+    # (auth_users + jwt_secret injection = account takeover), even if the
+    # marker volume is unwritable.
+    if config.AUTH_ENABLED:
+        return True
     # Legacy signal: SETUP_COMPLETE written into a readable .env.
     env_path = _env_path()
     try:
@@ -46,6 +51,33 @@ def _is_setup_complete() -> bool:
     except OSError:
         pass
     return False
+
+
+def _write_setup_marker() -> None:
+    marker = _setup_marker_path()
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("true\n")
+    except OSError as e:
+        logger.warning("Could not write setup-complete marker %s: %s", marker, e)
+
+
+def mark_setup_complete_if_configured() -> None:
+    """Startup hook: lock the setup wizard on already-configured deployments.
+
+    Deployments configured entirely via environment variables (e.g. Ollama in
+    docker-compose) never run the wizard, so no marker exists and
+    POST /api/setup/config would stay open forever — letting an unauthenticated
+    caller inject auth_users/jwt_secret and take over the instance. If the
+    running config is already usable, record completion now.
+    """
+    if _is_setup_complete():
+        return
+    # ROUTER_TYPE defaults to "openrouter"; "ollama" only appears when an
+    # operator deliberately configured it — the wizard was never needed.
+    if config.ROUTER_TYPE == "ollama":
+        logger.info("Ollama deployment detected at startup — locking setup wizard")
+        _write_setup_marker()
 
 
 class SetupConfigRequest(BaseModel):
@@ -230,12 +262,7 @@ async def save_setup_config(request: SetupConfigRequest):
 
     # Record completion durably so the setup endpoint cannot be re-run, even on
     # deployments without a writable .env (Docker `environment:` vars, Ollama).
-    marker = _setup_marker_path()
-    try:
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text("true\n")
-    except OSError as e:
-        logger.warning("Could not write setup-complete marker %s: %s", marker, e)
+    _write_setup_marker()
 
     return {
         "success": True,
