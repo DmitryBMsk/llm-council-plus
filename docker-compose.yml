@@ -39,6 +39,10 @@ services:
       - ./credentials:/app/credentials:ro
       - ./.env:/app/.env
     restart: unless-stopped
+    # Contain OOM to the container: uploads are read fully into memory and
+    # PDF rendering can expand far beyond the 20MB upload cap (PDF bombs).
+    mem_limit: 1g
+    memswap_limit: 1g
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8001/api/version')"]
       interval: 30s

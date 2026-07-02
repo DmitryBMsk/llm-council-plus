@@ -37,7 +37,9 @@ const Stage2 = memo(function Stage2({ rankings, labelToModel, aggregateRankings,
     return null;
   }
 
-  const currentRanking = rankings[activeTab];
+  // Clamp: activeTab state can outlive a rerender with fewer rankings
+  const safeTab = Math.min(activeTab, rankings.length - 1);
+  const currentRanking = rankings[safeTab];
   const hasError = currentRanking?.error;
 
   return (
@@ -69,7 +71,7 @@ const Stage2 = memo(function Stage2({ rankings, labelToModel, aggregateRankings,
         {rankings.map((rank, index) => (
           <button
             key={index}
-            className={`tab ${activeTab === index ? 'active' : ''} ${rank.error ? 'tab-error' : ''}`}
+            className={`tab ${safeTab === index ? 'active' : ''} ${rank.error ? 'tab-error' : ''}`}
             onClick={() => setActiveTab(index)}
             title={rank.error ? rank.error_message : undefined}
           >

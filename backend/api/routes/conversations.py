@@ -154,8 +154,12 @@ Please analyze the attached content in the context of the user's question."""
 
 
 @router.get("/api/conversations", response_model=List[ConversationMetadata])
-async def list_conversations(current_user: str = Depends(get_current_user)):
-    """List all conversations (metadata only). Requires authentication."""
+def list_conversations(current_user: str = Depends(get_current_user)):
+    """List all conversations (metadata only). Requires authentication.
+
+    Deliberately sync: FastAPI runs sync endpoints in its threadpool, keeping
+    the per-file JSON parsing of every conversation off the event loop.
+    """
     return storage.list_conversations(username=_ownership_username(current_user))
 
 
