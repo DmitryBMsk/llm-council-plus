@@ -324,7 +324,10 @@ export default function ChatInterface({
           </div>
         ) : (
           conversation.messages.map((msg, index) => (
-            <div key={index} className="message-group">
+            // Key by conversation too: with a bare index, switching conversations
+            // reuses Stage1/Stage2 instances and their tab state bleeds across
+            // conversations (crashing when the tab index goes out of range)
+            <div key={`${conversation.id}-${index}`} className="message-group">
               {msg.role === 'user' ? (
                 <div className="user-message">
                   <div className="message-label">You</div>

@@ -61,20 +61,20 @@ def format_with_toon(data: List[Dict], stage_name: str) -> Tuple[str, Dict]:
     # Calculate stats
     stats = get_savings_stats(data, toon_text)
 
-    # Store stats for this stage (create new dict to avoid mutation issues)
-    new_stats = current_stats.copy()
-    new_stats[stage_name] = stats
+    # Mutate the request-scoped dict IN PLACE: Stage 2/3 run inside
+    # asyncio.create_task, which copies the contextvars context, so
+    # _token_stats_var.set() there would only update the task's private copy
+    # and the streaming endpoint would always read empty stats. The dict
+    # object itself is shared (installed per-request by reset_token_stats),
+    # so in-place writes are visible to the parent and stay request-isolated.
+    current_stats[stage_name] = stats
 
-    # Update total
     stages_with_stats = [s for s in ["stage1", "stage2", "stage3"]
-                        if new_stats.get(s)]
+                        if current_stats.get(s)]
     if stages_with_stats:
-        new_stats["total"] = aggregate_token_stats(
-            *[new_stats[s] for s in stages_with_stats]
+        current_stats["total"] = aggregate_token_stats(
+            *[current_stats[s] for s in stages_with_stats]
         )
-
-    # Update the context var
-    _token_stats_var.set(new_stats)
 
     logger.debug(f"[TOON] {stage_name}: JSON={stats['json_tokens']} TOON={stats['toon_tokens']} Saved={stats['saved_percent']}%")
 
@@ -105,6 +105,10 @@ from . import router_dispatch
 # Conversation-history window sent to council models (see build_context_prompt)
 MAX_CONTEXT_MESSAGES = 12   # last 6 user/assistant exchanges
 MAX_CONTEXT_CHARS = 24_000  # total character budget for the history block
+
+# Stage 3 chairman fallback limits (see stage3_synthesize_final)
+MAX_CHAIRMAN_FALLBACKS = 2       # cap the sequential fallback chain
+CHAIRMAN_FALLBACK_TIMEOUT = 45.0  # seconds per fallback attempt
 
 
 def build_context_prompt(conversation_history: List[Dict[str, Any]], user_query: str) -> str:
@@ -1079,11 +1083,14 @@ async def stage3_synthesize_final(
         logger.warning("Chairman model %s failed (%s). Attempting fallback with preset models...",
                       chairman_model, error_reason)
 
-        # Collect all Stage 1 models (excluding chairman if it was in the list)
+        # Collect Stage 1 models (excluding chairman if it was in the list).
+        # Cap the chain: trying every council model sequentially at full
+        # timeout can stall Stage 3 for 15+ minutes when the provider is
+        # rate-limiting — exactly the situation that triggers fallbacks.
         fallback_models = [
             r['model'] for r in stage1_results
             if r.get('response') and r['model'] != chairman_model
-        ]
+        ][:MAX_CHAIRMAN_FALLBACKS]
 
         for fallback_model in fallback_models:
             logger.info("Attempting to use %s as fallback chairman (%d models remaining)...",
@@ -1092,6 +1099,7 @@ async def stage3_synthesize_final(
                 router_type,
                 model=fallback_model,
                 messages=messages,
+                timeout=CHAIRMAN_FALLBACK_TIMEOUT,
                 stage="STAGE3_FALLBACK",
                 temperature=settings.chairman_temperature,
             )
@@ -1141,26 +1149,24 @@ def parse_ranking_from_text(ranking_text: str) -> List[str]:
     """
     import re
 
-    # Look for "FINAL RANKING:" section
-    if "FINAL RANKING:" in ranking_text:
-        # Extract everything after "FINAL RANKING:"
-        parts = ranking_text.split("FINAL RANKING:")
-        if len(parts) >= 2:
-            ranking_section = parts[1]
-            # Try to extract numbered list format (e.g., "1. Response A")
-            # This pattern looks for: number, period, optional space, "Response X"
-            numbered_matches = re.findall(r'\d+\.\s*Response [A-Z]', ranking_section)
-            if numbered_matches:
-                # Extract just the "Response X" part
-                return [re.search(r'Response [A-Z]', m).group() for m in numbered_matches]
+    # Case-insensitive header match: models write "FINAL RANKING:" as well as
+    # "Final Ranking:" / "Final ranking:".
+    parts = re.split(r'FINAL RANKING\s*:', ranking_text, maxsplit=1, flags=re.IGNORECASE)
+    if len(parts) < 2:
+        # No ranking section: return nothing rather than scraping "Response X"
+        # mentions from the evaluation text — those reflect discussion order
+        # (with duplicates), not a ranking, and would poison the aggregate.
+        return []
 
-            # Fallback: Extract all "Response X" patterns in order
-            matches = re.findall(r'Response [A-Z]', ranking_section)
-            return matches
-
-    # Fallback: try to find any "Response X" patterns in order
-    matches = re.findall(r'Response [A-Z]', ranking_text)
-    return matches
+    ranking_section = parts[1]
+    # Try to extract numbered list format (e.g., "1. Response A")
+    numbered_matches = re.findall(r'\d+\.\s*Response [A-Z]', ranking_section)
+    if numbered_matches:
+        labels = [re.search(r'Response [A-Z]', m).group() for m in numbered_matches]
+    else:
+        labels = re.findall(r'Response [A-Z]', ranking_section)
+    # Dedupe while preserving order (models occasionally repeat a label).
+    return list(dict.fromkeys(labels))
 
 
 def calculate_aggregate_rankings(

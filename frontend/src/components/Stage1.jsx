@@ -24,7 +24,9 @@ const Stage1 = memo(function Stage1({ responses, timings, isStreaming }) {
     return null;
   }
 
-  const currentResponse = responses[activeTab];
+  // Clamp: activeTab state can outlive a rerender with fewer responses
+  const safeTab = Math.min(activeTab, responses.length - 1);
+  const currentResponse = responses[safeTab];
   const hasError = currentResponse?.error;
 
   return (
@@ -53,7 +55,7 @@ const Stage1 = memo(function Stage1({ responses, timings, isStreaming }) {
         {responses.map((resp, index) => (
           <button
             key={resp.model}
-            className={`tab ${activeTab === index ? 'active' : ''} ${resp.error ? 'tab-error' : ''} ${index === responses.length - 1 && isStreaming ? 'new-tab' : ''}`}
+            className={`tab ${safeTab === index ? 'active' : ''} ${resp.error ? 'tab-error' : ''} ${index === responses.length - 1 && isStreaming ? 'new-tab' : ''}`}
             onClick={() => setActiveTab(index)}
             title={resp.error ? resp.error_message : undefined}
           >

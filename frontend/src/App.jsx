@@ -557,10 +557,18 @@ function App() {
             });
             break;
 
-          case 'title_complete':
-            // Reload conversations to get updated title
-            loadConversations();
+          case 'title_complete': {
+            // Update the sidebar title locally; the full list already reloads
+            // on 'complete' — a second fetch here doubled the list-endpoint load
+            const titledConvId = activeStreamingConvIdRef.current;
+            const newTitle = event.data?.title;
+            if (titledConvId && newTitle) {
+              setConversations((prev) => prev.map((c) => (
+                c.id === titledConvId ? { ...c, title: newTitle } : c
+              )));
+            }
             break;
+          }
 
           case 'complete': {
             // Stream complete, clear streaming state
