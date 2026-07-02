@@ -3,10 +3,13 @@
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any, Optional
 import asyncio
+import logging
 import time
 import httpx
 
 from ... import config
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["models"])
 
@@ -229,3 +232,59 @@ async def get_available_models(router_type: Optional[str] = None):
 
         except httpx.RequestError as e:
             raise HTTPException(status_code=503, detail=f"Failed to fetch models: {str(e)}")
+
+
+# --- Curated free-model preset (https://shir-man.com/free-llm/) -------------
+# Daily-ranked list of free OpenRouter models (health checks + lite agent
+# evals). Used by the frontend "Free" preset; falls back to the plain
+# free-tier filter when this feed is unavailable.
+
+FREE_LLM_RECOMMENDATION_URL = "https://shir-man-com.pages.dev/api/free-llm/recommendation"
+_FREE_PRESET_CACHE_TTL = 3600  # feed updates daily; 1h keeps us fresh enough
+_free_preset_cache: Dict[str, Any] = {"data": None, "timestamp": 0.0}
+
+
+def _extract_free_preset(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract ranked free model ids (primary first) from the recommendation feed."""
+    ids = []
+    primary = (data.get("primary") or {}).get("id")
+    if primary:
+        ids.append(primary)
+    for alt in data.get("alternatives") or []:
+        alt_id = alt.get("id")
+        if alt_id and alt_id not in ids:
+            ids.append(alt_id)
+    return {
+        "models": ids,
+        "chairman": primary,
+        "updated_at": data.get("updatedAt"),
+        "source": "https://shir-man.com/free-llm/",
+    }
+
+
+async def _fetch_free_recommendation() -> Dict[str, Any]:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(FREE_LLM_RECOMMENDATION_URL)
+        resp.raise_for_status()
+        return resp.json()
+
+
+@router.get("/api/models/free-preset")
+async def get_free_preset():
+    """Ranked free models for the Free council preset (cached, 1h TTL)."""
+    now = time.time()
+    cached = _free_preset_cache["data"]
+    if cached is not None and now - _free_preset_cache["timestamp"] < _FREE_PRESET_CACHE_TTL:
+        return cached
+
+    try:
+        result = _extract_free_preset(await _fetch_free_recommendation())
+        _free_preset_cache["data"] = result
+        _free_preset_cache["timestamp"] = now
+        return result
+    except Exception as e:
+        logger.warning("free-llm recommendation feed unavailable: %s", e)
+        if cached is not None:
+            return cached  # stale beats empty
+        return {"models": [], "chairman": None, "updated_at": None,
+                "source": "https://shir-man.com/free-llm/"}

@@ -550,4 +550,16 @@ export const api = {
     }
     return response.json();
   },
+
+  /**
+   * Get the curated free-model preset (daily-ranked, shir-man.com/free-llm). (Public endpoint)
+   * @returns {Promise<{models: string[], chairman: string|null, updated_at: string|null}>}
+   */
+  async getFreePreset() {
+    const response = await fetch(`${API_BASE}/api/models/free-preset`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch free preset');
+    }
+    return response.json();
+  },
 };
