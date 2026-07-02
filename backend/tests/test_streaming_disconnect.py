@@ -13,6 +13,18 @@ def _parse_sse_event(chunk):
     return json.loads(text[6:].strip())
 
 
+async def _collect_sse_events(response, timeout=1.0):
+    """Collect parsed SSE events from a streaming response with a test timeout."""
+    events = []
+
+    async def collect():
+        async for chunk in response.body_iterator:
+            events.append(_parse_sse_event(chunk))
+
+    await asyncio.wait_for(collect(), timeout=timeout)
+    return events
+
+
 class TestStreamingDisconnect:
     """Test that partial results are saved when client disconnects during streaming."""
 
@@ -283,6 +295,117 @@ class TestStreamingDisconnect:
         assert [event["type"] for event in events] == ["stage1_start", "error"]
         assert events[-1]["message"] == "No council models configured"
         assert saved_messages == []
+
+    @pytest.mark.asyncio
+    async def test_stage1_silent_generator_emits_heartbeats_and_completes(self):
+        """Stage 1 should keep SSE alive while waiting for the next model result."""
+        from ..main import send_message_stream
+        from .. import storage
+        from ..api.routes import conversations
+
+        conversation_id = "test-stage1-heartbeat-conv"
+        saved_messages = []
+        stage1_result = {"model": "slow-model", "response": "eventual response"}
+
+        async def mock_stage1_streaming(*args, **kwargs):
+            await asyncio.sleep(0.12)
+            yield stage1_result
+
+        def track_save(*args, **kwargs):
+            saved_messages.append({"args": args, "kwargs": kwargs})
+
+        with patch.object(storage, "get_conversation", return_value={
+            "id": conversation_id,
+            "messages": [{"role": "user", "content": "Existing message"}],
+            "models": None,
+            "chairman": None,
+            "execution_mode": "chat_only",
+        }), patch.object(storage, "add_user_message"), patch.object(
+            storage, "add_assistant_message", side_effect=track_save
+        ), patch(
+            "backend.api.routes.conversations.stage1_collect_responses_streaming", mock_stage1_streaming
+        ), patch.object(
+            conversations, "STAGE1_HEARTBEAT_INTERVAL", 0.05, create=True
+        ), patch("backend.api.routes.conversations.get_token_stats", return_value={}), patch(
+            "backend.api.routes.conversations.reset_token_stats"
+        ):
+
+            class MockRequest:
+                content = "Test query"
+                attachments = None
+                web_search = False
+                web_search_provider = None
+
+            response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+            events = await _collect_sse_events(response)
+
+        heartbeat_events = [
+            event for event in events
+            if event["type"] == "heartbeat" and event.get("stage") == "stage1"
+        ]
+        assert heartbeat_events, "Expected at least one Stage 1 heartbeat before the slow result"
+        assert [event["type"] for event in events][-2:] == ["stage1_complete", "complete"]
+        assert events[-2]["data"] == [stage1_result]
+        assert len(saved_messages) == 1
+
+    @pytest.mark.asyncio
+    async def test_stage1_timeout_closes_hanging_generator_after_partial_result(self, monkeypatch):
+        """Stage 1 timeout should drop hanging models only after at least one result exists."""
+        from ..main import send_message_stream
+        from .. import config, storage
+        from ..api.routes import conversations
+
+        conversation_id = "test-stage1-timeout-conv"
+        saved_messages = []
+        closed = False
+        stage1_result = {"model": "first-model", "response": "first response"}
+
+        async def mock_stage1_streaming(*args, **kwargs):
+            nonlocal closed
+            try:
+                yield stage1_result
+                await asyncio.Event().wait()
+            finally:
+                closed = True
+
+        def track_save(*args, **kwargs):
+            saved_messages.append({"args": args, "kwargs": kwargs})
+
+        monkeypatch.setattr(config, "STAGE1_TIMEOUT", 0.2, raising=False)
+
+        with patch.object(storage, "get_conversation", return_value={
+            "id": conversation_id,
+            "messages": [{"role": "user", "content": "Existing message"}],
+            "models": None,
+            "chairman": None,
+            "execution_mode": "chat_only",
+        }), patch.object(storage, "add_user_message"), patch.object(
+            storage, "add_assistant_message", side_effect=track_save
+        ), patch(
+            "backend.api.routes.conversations.stage1_collect_responses_streaming", mock_stage1_streaming
+        ), patch.object(
+            conversations, "STAGE1_HEARTBEAT_INTERVAL", 0.05, create=True
+        ), patch("backend.api.routes.conversations.get_token_stats", return_value={}), patch(
+            "backend.api.routes.conversations.reset_token_stats"
+        ):
+
+            class MockRequest:
+                content = "Test query"
+                attachments = None
+                web_search = False
+                web_search_provider = None
+
+            response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+            events = await _collect_sse_events(response, timeout=1.0)
+
+        assert closed is True
+        assert "stage1_timeout" in [event["type"] for event in events]
+        timeout_event = next(event for event in events if event["type"] == "stage1_timeout")
+        assert timeout_event["collected"] == 1
+        complete_event = next(event for event in events if event["type"] == "stage1_complete")
+        assert complete_event["data"] == [stage1_result]
+        assert len(saved_messages) == 1
+        assert saved_messages[0]["args"][1] == [stage1_result]
 
 
 class TestGeneratorCleanup:

@@ -5,7 +5,9 @@ services:
       dockerfile: backend/Dockerfile
     container_name: llm-council-backend
     ports:
-      - "8001:8001"
+      # Loopback only: the frontend nginx proxies /api/ over the compose
+      # network; publishing on 0.0.0.0 exposes the (auth-optional) API to the LAN.
+      - "127.0.0.1:8001:8001"
     env_file:
       - .env
       - path: .env.production
@@ -49,7 +51,9 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - VITE_API_BASE=${VITE_API_BASE:-http://localhost:8001}
+        # Empty = same-origin relative paths through the frontend nginx /api/
+        # proxy, so the app works from any client machine, not just the host.
+        - VITE_API_BASE=${VITE_API_BASE:-}
     container_name: llm-council-frontend
     ports:
       - "80:80"

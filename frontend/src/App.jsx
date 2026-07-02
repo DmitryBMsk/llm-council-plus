@@ -147,7 +147,7 @@ function App() {
     try {
       // Check if we have streaming state for this conversation
       const streamingState = streamingStateRef.current.get(id);
-      if (streamingState) {
+      if (streamingState && id === activeStreamingConvIdRef.current) {
         // Restore streaming state (has intermediate results)
         const conv = await api.getConversation(id);
         setCurrentConversation({
@@ -156,6 +156,9 @@ function App() {
         });
         setIsLoading(streamingState.isLoading);
         return;
+      }
+      if (streamingState) {
+        streamingStateRef.current.delete(id);
       }
 
       const conv = await api.getConversation(id);
@@ -222,7 +225,7 @@ function App() {
 
   const handleSelectConversation = (id) => {
     // Save current streaming state before switching
-    if (currentConversationId && isLoading && currentConversation) {
+    if (currentConversationId && isLoading && currentConversation && currentConversationId === activeStreamingConvIdRef.current) {
       streamingStateRef.current.set(currentConversationId, {
         messages: currentConversation.messages,
         isLoading: true
@@ -576,6 +579,19 @@ function App() {
           case 'error': {
             console.error('Stream error:', event.message);
             addToast(`Stream error: ${event.message || 'Unknown error'}`, 'error');
+            updateStreamingState((prev) => {
+              const lastIdx = prev.messages.length - 1;
+              const lastMsg = prev.messages[lastIdx];
+              if (!lastMsg || lastMsg.role !== 'assistant') return prev;
+              const currentMetadata = lastMsg.metadata || {};
+              const currentLoading = lastMsg.loading || {};
+              const newLastMsg = {
+                ...lastMsg,
+                metadata: { ...currentMetadata, error: true },
+                loading: { ...currentLoading, stage1: false, stage2: false, stage3: false },
+              };
+              return { ...prev, messages: [...prev.messages.slice(0, -1), newLastMsg] };
+            });
             // Clear streaming state on error
             const streamingConvId = activeStreamingConvIdRef.current;
             if (streamingConvId) {
@@ -623,13 +639,33 @@ function App() {
       }
 
       console.error('Failed to send message:', error);
+      updateStreamingState((prev) => {
+        const lastIdx = prev.messages.length - 1;
+        const lastMsg = prev.messages[lastIdx];
+        if (!lastMsg || lastMsg.role !== 'assistant') return prev;
+        const currentMetadata = lastMsg.metadata || {};
+        const currentLoading = lastMsg.loading || {};
+        const newLastMsg = {
+          ...lastMsg,
+          metadata: { ...currentMetadata, error: true },
+          loading: { ...currentLoading, stage1: false, stage2: false, stage3: false },
+        };
+        return { ...prev, messages: [...prev.messages.slice(0, -1), newLastMsg] };
+      });
       // Remove optimistic messages on error
-      setCurrentConversation((prev) => ({
-        ...prev,
-        messages: prev.messages.slice(0, -2),
-      }));
+      const streamingConvId = activeStreamingConvIdRef.current;
+      if (currentConversationIdRef.current === streamingConvId) {
+        setCurrentConversation((prev) => (
+          prev ? { ...prev, messages: prev.messages.slice(0, -2) } : prev
+        ));
+      }
+      if (streamingConvId) {
+        streamingStateRef.current.delete(streamingConvId);
+      }
+      activeStreamingConvIdRef.current = null;
       streamAbortControllerRef.current = null;
       setIsLoading(false);
+      addToast(`Stream failed: ${error?.message || 'Unknown error'}`, 'error');
     }
   };
 

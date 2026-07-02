@@ -35,7 +35,7 @@ APP_VERSION="1.2.12" docker compose up -d
 **`auth.py`**
 - JWT-based authentication system
 - `reload_auth()` function for hot reload of auth configuration
-- Users configured via `AUTH_USERS_JSON` environment variable
+- Users configured via `AUTH_USERS` environment variable
 - 60-day token expiry with auto-logout
 
 **`openrouter.py`**
@@ -121,7 +121,7 @@ Configuration changes via Setup Wizard are applied without container restart:
 
 ### Authentication (Optional)
 - JWT tokens with 60-day expiry
-- Users defined via `AUTH_USERS_JSON` env var
+- Users defined via `AUTH_USERS` env var
 - Enable/disable via `AUTH_ENABLED` flag
 - Auto-logout on token expiry
 
@@ -187,7 +187,7 @@ volumes:
 - `ROUTER_TYPE` - "openrouter" (default) or "ollama"
 - `AUTH_ENABLED` - "true" to enable authentication
 - `JWT_SECRET` - Secret for JWT tokens
-- `AUTH_USERS_JSON` - JSON object of username:password pairs
+- `AUTH_USERS` - JSON object of username:password pairs
 - `TAVILY_API_KEY` - For web search feature
 - `GOOGLE_DRIVE_FOLDER_ID` - For Drive integration
 - `COUNCIL_MODELS` - Comma-separated model list

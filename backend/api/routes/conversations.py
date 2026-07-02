@@ -25,6 +25,11 @@ from .models import _get_models_cache_lock, _models_cache
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["conversations"])
+STAGE1_HEARTBEAT_INTERVAL = 15
+
+
+async def _next_stage1_item(stage1_stream):
+    return await stage1_stream.__anext__()
 
 
 class CreateConversationRequest(BaseModel):
@@ -284,8 +289,9 @@ async def upload_file(
                 detail="File too large. Maximum size is 20MB."
             )
 
-        # Parse the file
-        parsed_content, file_type = parse_file(filename, file_content)
+        # Parse off the event loop: PDF parsing (pymupdf4llm) is CPU-bound and
+        # would otherwise stall every concurrent SSE stream.
+        parsed_content, file_type = await asyncio.to_thread(parse_file, filename, file_content)
 
         # Build response
         response = {
@@ -461,6 +467,8 @@ async def send_message_stream(
         aggregate_rankings = []
         message_saved = False  # Track if message was saved in normal flow
         title_task = None
+        stage1_stream = None
+        stage1_item_task = None
         stage2_task = None
         stage3_task = None
 
@@ -488,7 +496,7 @@ async def send_message_stream(
             )
 
             try:
-                async for item in stage1_collect_responses_streaming(
+                stage1_stream = stage1_collect_responses_streaming(
                     full_query,
                     conversation_history,
                     conv_models,
@@ -497,7 +505,51 @@ async def send_message_stream(
                     web_search_provider=web_search_provider,
                     chairman=conv_chairman,
                     router_type=router_type,
-                ):
+                )
+                while True:
+                    if stage1_item_task is None:
+                        stage1_item_task = asyncio.ensure_future(_next_stage1_item(stage1_stream))
+
+                    # Do not use wait_for() here: timeout would cancel __anext__()
+                    # and permanently close the Stage 1 async generator.
+                    done, _ = await asyncio.wait(
+                        {stage1_item_task},
+                        timeout=STAGE1_HEARTBEAT_INTERVAL,
+                    )
+                    if not done:
+                        elapsed = time.time() - stage1_start_time
+                        if elapsed > config.STAGE1_TIMEOUT and stage1_results:
+                            stage1_item_task.cancel()
+                            await asyncio.gather(stage1_item_task, return_exceptions=True)
+                            stage1_item_task = None
+                            await stage1_stream.aclose()
+                            stage1_stream = None
+
+                            expected_models = len(conv_models or config.COUNCIL_MODELS)
+                            dropped_count = max(expected_models - len(stage1_results), 0)
+                            logger.warning(
+                                "[STREAMING] Stage 1 timeout after %.1fs for conversation %s: "
+                                "collected %d results, dropped %d pending models",
+                                elapsed,
+                                conversation_id,
+                                len(stage1_results),
+                                dropped_count,
+                            )
+                            yield f"data: {json.dumps({'type': 'stage1_timeout', 'collected': len(stage1_results), 'timestamp': time.time()})}\n\n"
+                            break
+
+                        yield f"data: {json.dumps({'type': 'heartbeat', 'stage': 'stage1', 'timestamp': time.time()})}\n\n"
+                        continue
+
+                    try:
+                        item = stage1_item_task.result()
+                    except StopAsyncIteration:
+                        stage1_item_task = None
+                        break
+                    finally:
+                        if stage1_item_task is not None and stage1_item_task.done():
+                            stage1_item_task = None
+
                     # Handle tool_outputs message (first yield if tools were used)
                     if item.get("type") == "tool_outputs":
                         tool_outputs = item.get("tool_outputs", [])
@@ -693,7 +745,10 @@ async def send_message_stream(
             raise
         finally:
             # Best-effort: cancel any in-flight tasks on disconnect/abort.
-            tasks_to_cleanup = [t for t in (title_task, stage2_task, stage3_task) if t is not None and not t.done()]
+            tasks_to_cleanup = [
+                t for t in (title_task, stage1_item_task, stage2_task, stage3_task)
+                if t is not None and not t.done()
+            ]
             for task in tasks_to_cleanup:
                 task.cancel()
             # Await cancelled tasks to prevent "task was destroyed but pending" warnings
@@ -706,6 +761,12 @@ async def send_message_stream(
                     pass  # Cleanup was interrupted by cancellation, tasks are already cancelled
                 except Exception:
                     pass  # Ignore other cleanup errors
+
+            if stage1_stream is not None:
+                try:
+                    await stage1_stream.aclose()
+                except Exception:
+                    pass
 
             # CRITICAL FIX: Save partial results if client disconnected before completion
             # This ensures we don't lose work when client closes connection mid-stream

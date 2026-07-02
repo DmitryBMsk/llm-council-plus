@@ -2,6 +2,7 @@
 
 import re
 import json
+import asyncio
 import logging
 import contextvars
 from typing import List, Dict, Any, Tuple, Optional
@@ -370,7 +371,8 @@ async def run_web_search_direct(
     """
     p = (provider or "").strip().lower()
     if p in {"tavily", "exa"}:
-        return run_tavily_direct(query, provider=p)
+        # run_tavily_direct does blocking HTTP; keep it off the event loop.
+        return await asyncio.to_thread(run_tavily_direct, query, provider=p)
 
     try:
         results = await web_search_module.perform_web_search(
@@ -573,7 +575,8 @@ async def stage1_collect_responses(
     tool_outputs: List[Dict[str, str]] = []
     logger.debug("[STAGE1] requires_tools(%s...): %s", user_query[:30], requires_tools(user_query))
     if requires_tools(user_query):
-        tool_outputs = run_tools_for_query(user_query)
+        # Tool calls (Tavily/Exa/DDG/Wikipedia/yfinance) are sync HTTP; keep them off the event loop.
+        tool_outputs = await asyncio.to_thread(run_tools_for_query, user_query)
         logger.debug("[STAGE1] tool_outputs: %d results", len(tool_outputs))
         if tool_outputs:
             tool_text = """IMPORTANT: Use the following real-time search results to answer the user's question.
@@ -705,7 +708,7 @@ async def stage1_collect_responses_streaming(
     # Regular tool detection (Feature 4)
     elif requires_tools(user_query):
         logger.debug("[STAGE1-STREAM] requires_tools(%s...): %s", user_query[:30], requires_tools(user_query))
-        tool_outputs = run_tools_for_query(user_query)
+        tool_outputs = await asyncio.to_thread(run_tools_for_query, user_query)
         logger.debug("[STAGE1-STREAM] tool_outputs: %d results", len(tool_outputs))
 
     if tool_outputs:
@@ -1224,7 +1227,8 @@ Title:"""
         # Fallback to a generic title
         return "New Conversation"
 
-    title = response.get('content', 'New Conversation').strip()
+    # content can be explicitly None (e.g. reasoning models exhausting max_tokens)
+    title = (response.get('content') or 'New Conversation').strip()
 
     # Clean up the title - remove quotes, limit length
     title = title.strip('"\'')

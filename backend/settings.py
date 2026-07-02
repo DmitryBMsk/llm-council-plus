@@ -29,6 +29,7 @@ HOT_RELOADABLE: frozenset[str] = frozenset({
     "max_council_models",
     "min_chairman_context",
     "default_timeout",
+    "stage1_timeout",
     "title_generation_timeout",
     "auth_enabled",
     "jwt_secret",
@@ -97,6 +98,7 @@ class AppSettings:
 
     # Timeouts
     default_timeout: float = 120.0
+    stage1_timeout: float = 180.0
     title_generation_timeout: float = 180.0
 
     # Storage
@@ -147,6 +149,7 @@ class AppSettings:
             max_council_models=int(os.getenv("MAX_COUNCIL_MODELS", "5")),
             min_chairman_context=int(os.getenv("MIN_CHAIRMAN_CONTEXT", "25000")),
             default_timeout=float(os.getenv("DEFAULT_TIMEOUT", "120.0")),
+            stage1_timeout=float(os.getenv("STAGE1_TIMEOUT", "180.0")),
             title_generation_timeout=float(os.getenv("TITLE_GENERATION_TIMEOUT", "180.0")),
             data_dir=os.getenv("DATA_DIR", "data/conversations"),
             database_type=os.getenv("DATABASE_TYPE", "json").lower(),

@@ -60,6 +60,7 @@ DATA_DIR = os.getenv("DATA_DIR", "data/conversations")
 
 # Timeout settings (in seconds)
 DEFAULT_TIMEOUT = float(os.getenv("DEFAULT_TIMEOUT", "120.0"))
+STAGE1_TIMEOUT = float(os.getenv("STAGE1_TIMEOUT", "180.0"))
 TITLE_GENERATION_TIMEOUT = float(os.getenv("TITLE_GENERATION_TIMEOUT", "180.0"))
 
 # Storage backend configuration (Feature 2: Multi-Database Support)
@@ -133,7 +134,7 @@ def reload_config():
     global ENABLE_MEMORY, ENABLE_LANGGRAPH
     global DATABASE_TYPE, POSTGRESQL_URL, MYSQL_URL
     global GOOGLE_DRIVE_FOLDER_ID, GOOGLE_SERVICE_ACCOUNT_FILE, GOOGLE_DRIVE_ENABLED
-    global DATA_DIR, DEFAULT_TIMEOUT, TITLE_GENERATION_TIMEOUT
+    global DATA_DIR, DEFAULT_TIMEOUT, STAGE1_TIMEOUT, TITLE_GENERATION_TIMEOUT
     global MAX_COUNCIL_MODELS, MIN_CHAIRMAN_CONTEXT
 
     # Reload .env file first so os.environ reflects disk state
@@ -153,6 +154,7 @@ def reload_config():
     MAX_COUNCIL_MODELS = s.max_council_models
     MIN_CHAIRMAN_CONTEXT = s.min_chairman_context
     DEFAULT_TIMEOUT = s.default_timeout
+    STAGE1_TIMEOUT = s.stage1_timeout
     TITLE_GENERATION_TIMEOUT = s.title_generation_timeout
     DATA_DIR = s.data_dir
     DATABASE_TYPE = s.database_type

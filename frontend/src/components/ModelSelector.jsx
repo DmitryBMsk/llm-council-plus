@@ -964,7 +964,9 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
           ) : loadError ? (
             <div className="error-state">
               <p>Failed to load models: {loadError}</p>
-              <button onClick={loadModels}>Retry</button>
+              {/* Arrow wrapper: passing loadModels directly would feed the click
+                  event into its forcedRouterType param and break the request */}
+              <button onClick={() => loadModels()}>Retry</button>
             </div>
           ) : (
             <div className="models-grid" ref={modelsGridRef}>
