@@ -31,8 +31,9 @@ const BUILT_IN_PRESETS = {
   },
   free: {
     name: 'Free',
-    description: 'No cost - completely free models',
-    tierFilter: 'free',
+    description: 'Daily-ranked free models (shir-man.com/free-llm)',
+    curated: true,
+    tierFilter: 'free', // fallback when the curated feed is unavailable
     maxModels: 7,
   },
 };
@@ -106,6 +107,8 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
   const [providerFilter, setProviderFilter] = useState('');
   const [tierFilter, setTierFilter] = useState('');
   const [freeOnlyFilter, setFreeOnlyFilter] = useState(false);
+  // Curated free-model ids (daily-ranked) for the Free preset
+  const [curatedFreeIds, setCuratedFreeIds] = useState([]);
   const [sortBy, setSortBy] = useState('price-asc');
 
   // Refs for auto-scroll
@@ -125,6 +128,11 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
     if (isOpen) {
       setSavedPresets(loadSavedPresets());
       loadModels();
+      // Curated free list for the Free preset; on failure the preset
+      // silently falls back to the free-tier filter.
+      api.getFreePreset()
+        .then((data) => setCuratedFreeIds(data.models || []))
+        .catch(() => setCuratedFreeIds([]));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
@@ -322,13 +330,23 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
     let selectedIds = [];
     let chairmanId = '';
 
-    if (preset.tierFilter) {
-      // Select by tier (e.g., free models)
+    if (preset.curated && curatedFreeIds.length > 0) {
+      // Daily-ranked free list (shir-man.com/free-llm); first entry is the
+      // top pick and becomes the chairman.
+      const available = curatedFreeIds.filter((id) => allModels.some((m) => m.id === id));
+      const presetMax = Math.min(preset.maxModels || 7, maxModels);
+      selectedIds = available.slice(0, presetMax);
+      chairmanId = selectedIds[0] || '';
+    }
+
+    if (selectedIds.length < MIN_MODELS && preset.tierFilter) {
+      // Select by tier (e.g., free models) — also the fallback when the
+      // curated feed is unavailable or its models are not on this router
       const tierModels = allModels.filter((m) => m.tier === preset.tierFilter);
       const presetMax = Math.min(preset.maxModels || 7, maxModels);
       selectedIds = tierModels.slice(0, presetMax).map((m) => m.id);
       chairmanId = selectedIds[0] || '';
-    } else if (preset.modelPatterns) {
+    } else if (selectedIds.length === 0 && preset.modelPatterns) {
       // Select by pattern matching
       for (const pattern of preset.modelPatterns) {
         if (selectedIds.length >= maxModels) break;
