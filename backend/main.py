@@ -36,6 +36,9 @@ async def startup_event():
     validate_jwt_config()
     # Initialize database tables if using database storage (Feature 2: Multi-DB support)
     init_database()
+    # Lock the setup wizard on deployments already configured via env vars
+    from .api.routes.setup import mark_setup_complete_if_configured
+    mark_setup_complete_if_configured()
 
 # Enable CORS for local development
 app.add_middleware(

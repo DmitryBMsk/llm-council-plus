@@ -37,6 +37,7 @@ async def test_api_create_conversation_passes_router_type_to_storage():
             username = None
             execution_mode = "full"
             router_type = "ollama"
+            system_prompt = None
 
         conv = await api_create_conversation(MockRequest(), current_user="guest")
 

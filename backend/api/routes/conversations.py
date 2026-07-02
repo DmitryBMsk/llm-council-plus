@@ -39,6 +39,7 @@ class CreateConversationRequest(BaseModel):
     username: Optional[str] = Field(default=None, max_length=50)  # User who created the conversation
     execution_mode: Optional[str] = Field(default=None, pattern="^(chat_only|chat_ranking|full)$")
     router_type: Optional[str] = Field(default=None, pattern="^(openrouter|ollama)$")
+    system_prompt: Optional[str] = Field(default=None, max_length=10_000)  # Custom per-conversation system prompt
 
 
 class FileAttachment(BaseModel):
@@ -191,6 +192,7 @@ async def create_conversation(
         username=current_user,
         execution_mode=request.execution_mode or "full",
         router_type=router_type,
+        system_prompt=request.system_prompt,
     )
     return conversation
 
@@ -450,6 +452,7 @@ async def send_message_stream(
     # Get custom models and chairman from conversation (if set)
     conv_models = conversation.get("models")
     conv_chairman = conversation.get("chairman")
+    conv_system_prompt = conversation.get("system_prompt")
     execution_mode = (conversation.get("execution_mode") or "full").strip().lower()
     router_type = (conversation.get("router_type") or config.ROUTER_TYPE or "openrouter").strip().lower()
     if router_type not in {"openrouter", "ollama"}:
@@ -505,6 +508,7 @@ async def send_message_stream(
                     web_search_provider=web_search_provider,
                     chairman=conv_chairman,
                     router_type=router_type,
+                    system_prompt=conv_system_prompt,
                 )
                 while True:
                     if stage1_item_task is None:

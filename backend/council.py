@@ -102,6 +102,11 @@ from . import runtime_settings
 from . import router_dispatch
 
 
+# Conversation-history window sent to council models (see build_context_prompt)
+MAX_CONTEXT_MESSAGES = 12   # last 6 user/assistant exchanges
+MAX_CONTEXT_CHARS = 24_000  # total character budget for the history block
+
+
 def build_context_prompt(conversation_history: List[Dict[str, Any]], user_query: str) -> str:
     """
     Build a prompt with conversation history context.
@@ -116,8 +121,14 @@ def build_context_prompt(conversation_history: List[Dict[str, Any]], user_query:
     if not conversation_history:
         return user_query
 
+    # Window the history: without a cap, every past question and full council
+    # answer is resent to EVERY council model on EVERY message, growing
+    # unboundedly (cost explosion + small-context models start failing).
+    recent = conversation_history[-MAX_CONTEXT_MESSAGES:]
+    truncated = len(conversation_history) > len(recent)
+
     context_parts = []
-    for msg in conversation_history:
+    for msg in recent:
         if msg.get('role') == 'user':
             context_parts.append(f"User: {msg.get('content', '')}")
         elif msg.get('role') == 'assistant':
@@ -128,7 +139,18 @@ def build_context_prompt(conversation_history: List[Dict[str, Any]], user_query:
     if not context_parts:
         return user_query
 
+    # Enforce a character budget, dropping oldest parts first.
+    total = sum(len(p) for p in context_parts)
+    while len(context_parts) > 1 and total > MAX_CONTEXT_CHARS:
+        total -= len(context_parts.pop(0))
+        truncated = True
+    if context_parts and len(context_parts[0]) > MAX_CONTEXT_CHARS:
+        context_parts[0] = context_parts[0][-MAX_CONTEXT_CHARS:]
+        truncated = True
+
     context = "\n\n".join(context_parts)
+    if truncated:
+        context = "[earlier context omitted]\n\n" + context
     return f"""Previous conversation:
 {context}
 

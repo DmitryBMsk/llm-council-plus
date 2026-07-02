@@ -54,6 +54,41 @@ def test_setup_endpoint_blocked_when_marker_exists(tmp_path, monkeypatch):
     assert resp.status_code == 403
 
 
+def test_startup_locks_wizard_on_ollama_deployment(tmp_path, monkeypatch):
+    """Env-configured Ollama deployments never run the wizard — startup must
+    write the marker so POST /api/setup/config cannot inject auth and take over."""
+    setup_mod = _isolate(tmp_path, monkeypatch)
+    assert setup_mod._is_setup_complete() is False
+
+    setup_mod.mark_setup_complete_if_configured()
+
+    assert setup_mod._setup_marker_path().exists()
+    from ..main import app
+    client = TestClient(app)
+    resp = client.post("/api/setup/config", json={"auth_enabled": True})
+    assert resp.status_code == 403
+
+
+def test_startup_keeps_wizard_open_when_unconfigured(tmp_path, monkeypatch):
+    """Fresh install (openrouter, no key): startup must NOT lock the wizard."""
+    from .. import config
+    setup_mod = _isolate(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "ROUTER_TYPE", "openrouter")
+
+    setup_mod.mark_setup_complete_if_configured()
+
+    assert not setup_mod._setup_marker_path().exists()
+    assert setup_mod._is_setup_complete() is False
+
+
+def test_is_setup_complete_true_when_auth_enabled(tmp_path, monkeypatch):
+    """Configured auth must lock the wizard even without a marker file."""
+    from .. import config
+    setup_mod = _isolate(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "AUTH_ENABLED", True)
+    assert setup_mod._is_setup_complete() is True
+
+
 def test_setup_writes_marker_then_blocks_second_attempt(tmp_path, monkeypatch):
     setup_mod = _isolate(tmp_path, monkeypatch)
     # Register the env keys the endpoint mutates so monkeypatch restores them.

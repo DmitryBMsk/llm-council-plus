@@ -588,6 +588,7 @@ async def test_api_create_conversation_passes_execution_mode_to_storage():
             chairman = None
             username = None
             execution_mode = "chat_only"
+            system_prompt = None
 
         conv = await api_create_conversation(MockRequest(), current_user="guest")
 
