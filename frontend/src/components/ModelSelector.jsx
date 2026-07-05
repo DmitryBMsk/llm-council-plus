@@ -333,7 +333,15 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
     if (preset.curated && curatedFreeIds.length > 0) {
       // Daily-ranked free list (shir-man.com/free-llm); first entry is the
       // top pick and becomes the chairman.
-      const available = curatedFreeIds.filter((id) => allModels.some((m) => m.id === id));
+      // Filter to text-output models only — the feed occasionally includes
+      // audio/image generation models (e.g. Lyria) that can't participate
+      // in a text council.
+      const available = curatedFreeIds.filter((id) => {
+        const model = allModels.find((m) => m.id === id);
+        if (!model) return false;
+        const outputPart = (model.modality || 'text->text').toLowerCase().split('->')[1] || 'text';
+        return outputPart.includes('text') && !outputPart.includes('audio');
+      });
       const presetMax = Math.min(preset.maxModels || 7, maxModels);
       selectedIds = available.slice(0, presetMax);
       chairmanId = selectedIds[0] || '';
@@ -1014,16 +1022,21 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
                       )}
                     </div>
                     <div className="model-info">
-                      <div className="model-name">{model.name}</div>
+                      <div className="model-name" title={model.name}>
+                        {/* Strip redundant "Provider: " prefix — provider is shown below */}
+                        {(() => {
+                          const colon = model.name.indexOf(': ');
+                          return colon > 0 && colon < 22 ? model.name.slice(colon + 2) : model.name;
+                        })()}
+                      </div>
                       <div className="model-provider">{model.provider}</div>
                       <div className="model-specs">
                         <span className={`spec context ${!canChairman ? 'context-warning' : ''}`}>{model.context} ctx</span>
                         <span className="spec input">{model.inputPrice} in</span>
                         <span className="spec output">{model.outputPrice} out</span>
+                        {model.supportsImages && <span className="vision-badge" title="Supports images">V</span>}
                       </div>
                     </div>
-                    {model.isFree && <span className="free-badge">FREE</span>}
-                    {model.supportsImages && <span className="vision-badge" title="Supports images">V</span>}
                     <button
                       className={`chairman-btn ${isChairman ? 'active' : ''} ${!canChairman ? 'disabled' : ''}`}
                       onClick={(e) => canChairman && handleChairmanChange(model.id, e)}

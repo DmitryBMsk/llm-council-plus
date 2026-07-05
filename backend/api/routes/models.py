@@ -29,10 +29,16 @@ def _get_models_cache_lock() -> asyncio.Lock:
 
 
 def _parse_price(price_str: str) -> float:
-    """Parse price string to float (per million tokens)."""
+    """Parse price string to float (per million tokens).
+
+    OpenRouter uses -1 as a sentinel for variable/unknown pricing (meta-routers
+    like Auto Router, Body Builder). Return -1.0 so callers can distinguish
+    variable pricing from free (0.0).
+    """
     try:
-        # Price is per token, convert to per million
         price_per_token = float(price_str)
+        if price_per_token < 0:
+            return -1.0  # variable/unknown pricing
         return price_per_token * 1_000_000
     except (ValueError, TypeError):
         return 0.0
@@ -40,6 +46,8 @@ def _parse_price(price_str: str) -> float:
 
 def _format_price(price_per_million: float) -> str:
     """Format price per million tokens as human-readable string."""
+    if price_per_million < 0:
+        return "Variable"
     if price_per_million == 0:
         return "FREE"
     elif price_per_million < 0.01:
@@ -64,7 +72,8 @@ def _get_tier(input_price: float, output_price: float, is_free: bool) -> str:
     """Determine pricing tier based on output price."""
     if is_free:
         return "free"
-    # Based on output price per million tokens
+    if output_price < 0:
+        return "standard"  # variable/unknown pricing — don't show as free or budget
     if output_price >= 10:
         return "premium"
     elif output_price >= 1:
