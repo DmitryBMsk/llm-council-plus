@@ -18,7 +18,7 @@ services:
       - AUTH_USERS=${AUTH_USERS:-{}}
       - JWT_SECRET=${JWT_SECRET}
       # Router configuration
-      - ROUTER_TYPE=${ROUTER_TYPE:-openrouter}
+      - ROUTER_TYPE=${ROUTER_TYPE:-ollama}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - OPENROUTER_API_URL=${OPENROUTER_API_URL:-https://openrouter.ai/api/v1/chat/completions}
       - COUNCIL_MODELS=${COUNCIL_MODELS}

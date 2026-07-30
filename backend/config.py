@@ -27,10 +27,11 @@ else:
     # Default models based on router type
     if ROUTER_TYPE == "ollama":
         COUNCIL_MODELS = [
-            "deepseek-r1:latest",
             "llama3.1:latest",
-            "qwen3:latest",
             "gemma3:latest",
+            "qwen3:8b",
+            "mistral-nemo:latest",
+            "DeepSeek-R1:8b",
         ]
     else:
         COUNCIL_MODELS = [

@@ -136,6 +136,10 @@ async def get_available_models(router_type: Optional[str] = None):
                 data = response.json()
                 models = []
                 for model in data.get("models", []):
+                    # Skip embedding-only models — they don't support chat
+                    model_name_lower = model["name"].lower()
+                    if "embed" in model_name_lower or "/bge-" in model_name_lower:
+                        continue
                     models.append({
                         "id": model["name"],
                         "name": model["name"],

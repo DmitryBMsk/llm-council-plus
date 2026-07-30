@@ -24,10 +24,34 @@ RouterType = str
 
 
 def _normalize_router_type(router_type: Optional[str]) -> str:
+    logger.debug("_normalize_router_type called with router_type=%r, config.ROUTER_TYPE=%r",
+                 router_type, getattr(config, "ROUTER_TYPE", None))
     rt = (router_type or config.ROUTER_TYPE or "openrouter").lower()
     if rt not in {"openrouter", "ollama"}:
         raise ValueError(f"Invalid router_type: {router_type}")
+    logger.debug("_normalize_router_type resolved to %r", rt)
     return rt
+
+
+def _validate_model_router_compatibility(router_type: str, model: str) -> None:
+    """Raise ValueError if the model name doesn't match the router_type.
+
+    Heuristics:
+    - Ollama models use "name:tag" format (e.g. "gemma3:latest") — colon but no slash.
+    - OpenRouter models use "org/model" format (e.g. "google/gemma-3-12b-it:free") — contains slash.
+    """
+    if router_type == "openrouter" and ":" in model and "/" not in model:
+        logger.warning("Model %r looks like an Ollama model but router_type is %r", model, router_type)
+        raise ValueError(
+            f"Model '{model}' looks like an Ollama model but router_type is 'openrouter'. "
+            f"Check your provider configuration."
+        )
+    if router_type == "ollama" and "/" in model:
+        logger.warning("Model %r looks like an OpenRouter model but router_type is %r", model, router_type)
+        raise ValueError(
+            f"Model '{model}' looks like an OpenRouter model but router_type is 'ollama'. "
+            f"Check your provider configuration."
+        )
 
 
 def build_message_content(
@@ -56,6 +80,7 @@ async def query_model(
     temperature: float | None = None,
 ) -> Optional[Dict[str, Any]]:
     rt = _normalize_router_type(router_type)
+    _validate_model_router_compatibility(rt, model)
     if rt == "openrouter":
         return await openrouter.query_model(
             model=model,
@@ -83,6 +108,8 @@ async def query_models_parallel(
     temperature: float | None = None,
 ) -> Dict[str, Optional[Dict[str, Any]]]:
     rt = _normalize_router_type(router_type)
+    for model in models:
+        _validate_model_router_compatibility(rt, model)
     if rt == "openrouter":
         return await openrouter.query_models_parallel(
             models=models,
@@ -107,6 +134,8 @@ async def query_models_streaming(
     temperature: float | None = None,
 ):
     rt = _normalize_router_type(router_type)
+    for model in models:
+        _validate_model_router_compatibility(rt, model)
     if rt == "openrouter":
         async for item in openrouter.query_models_streaming(
             models=models,
@@ -135,6 +164,8 @@ async def query_models_with_stage_timeout(
     temperature: float | None = None,
 ) -> Dict[str, Optional[Dict[str, Any]]]:
     rt = _normalize_router_type(router_type)
+    for model in models:
+        _validate_model_router_compatibility(rt, model)
     if rt == "openrouter":
         return await openrouter.query_models_with_stage_timeout(
             models=models,
