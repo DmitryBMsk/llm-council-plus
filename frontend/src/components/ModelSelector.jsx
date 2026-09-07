@@ -114,6 +114,7 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
   // Refs for auto-scroll
   const modelsGridRef = useRef(null);
   const modelCardRefs = useRef({});
+  const routerChosenByUser = useRef(false);
 
   // Scroll to a specific model card
   const scrollToModel = useCallback((modelId) => {
@@ -126,6 +127,7 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
   // Load models and system prompt presets when modal opens
   useEffect(() => {
     if (isOpen) {
+      routerChosenByUser.current = false;
       setSavedPresets(loadSavedPresets());
       loadModels();
       // Curated free list for the Free preset; on failure the preset
@@ -140,7 +142,12 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
   // Load last used selection when models are loaded
   useEffect(() => {
     if (allModels.length > 0 && isOpen) {
-      loadLastUsedSelection();
+      // A new catalog must not undo an explicit provider choice.
+      if (routerChosenByUser.current) {
+        applyPreset('free');
+      } else {
+        loadLastUsedSelection();
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allModels, isOpen]);
@@ -198,6 +205,8 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
   };
 
   const loadLastUsedSelection = () => {
+    // The Last Used button explicitly opts back into the saved provider.
+    routerChosenByUser.current = false;
     try {
       const saved = localStorage.getItem(LAST_USED_KEY);
       if (saved) {
@@ -564,6 +573,7 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
   };
 
   const handleRouterTypeChange = async (nextType) => {
+    routerChosenByUser.current = true;
     setRouterType(nextType);
     setSelectedModels([]);
     setChairmanModel('');
