@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useConversationState } from '../hooks/useConversationState';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import Stage1 from './Stage1';
@@ -81,14 +82,14 @@ export default function ChatInterface({
   braveEnabled = false,
   addToast = () => {},
 }) {
-  const [input, setInput] = useState('');
-  const [attachments, setAttachments] = useState([]);
-  const [isUploading, setIsUploading] = useState(false);
+  const [input, setInput] = useConversationState(conversation?.id, '');
+  const [attachments, setAttachments] = useConversationState(conversation?.id, []);
+  const [isUploading, setIsUploading] = useConversationState(conversation?.id, false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [webSearchProvider, setWebSearchProvider] = useState('off'); // 'off', 'duckduckgo', 'tavily', 'exa', 'brave'
+  const [webSearchProvider, setWebSearchProvider] = useConversationState(conversation?.id, 'off'); // 'off', 'duckduckgo', 'tavily', 'exa', 'brave'
   const [driveStatus, setDriveStatus] = useState({ enabled: false, configured: false });
-  const [driveUploading, setDriveUploading] = useState({});
-  const [driveUploaded, setDriveUploaded] = useState({});
+  const [driveUploading, setDriveUploading] = useConversationState(conversation?.id, {});
+  const [driveUploaded, setDriveUploaded] = useConversationState(conversation?.id, {});
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);

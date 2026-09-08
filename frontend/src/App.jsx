@@ -39,6 +39,7 @@ function App() {
   const activeStreamingConvIdRef = useRef(null);
   // Track current conversation ID for streaming comparison (ref doesn't cause re-render issues)
   const currentConversationIdRef = useRef(null);
+  const conversationLoadVersionRef = useRef(0);
   // Abort/cancel in-flight streaming request
   const streamAbortControllerRef = useRef(null);
   const streamAbortRequestedRef = useRef(false);
@@ -144,27 +145,18 @@ function App() {
   };
 
   const loadConversation = async (id) => {
+    const version = ++conversationLoadVersionRef.current;
     try {
-      // Check if we have streaming state for this conversation
-      const streamingState = streamingStateRef.current.get(id);
-      if (streamingState && id === activeStreamingConvIdRef.current) {
-        // Restore streaming state (has intermediate results)
-        const conv = await api.getConversation(id);
-        setCurrentConversation({
-          ...conv,
-          messages: streamingState.messages
-        });
-        setIsLoading(streamingState.isLoading);
-        return;
-      }
-      if (streamingState) {
-        streamingStateRef.current.delete(id);
-      }
-
       const conv = await api.getConversation(id);
-      setCurrentConversation(conv);
+      if (id !== currentConversationIdRef.current || version !== conversationLoadVersionRef.current) return;
+      // Read AFTER awaiting: streaming may have advanced while GET was pending.
+      const streamingState = streamingStateRef.current.get(id);
+      setCurrentConversation(streamingState ? { ...conv, messages: streamingState.messages } : conv);
     } catch (error) {
-      console.error('Failed to load conversation:', error);
+      if (id === currentConversationIdRef.current && version === conversationLoadVersionRef.current) {
+        console.error('Failed to load conversation:', error);
+        addToast('Failed to load conversation', 'error');
+      }
     }
   };
 
@@ -186,18 +178,6 @@ function App() {
     };
   }, [isAuthenticated]);
 
-  // Keep ref in sync with state for use in callbacks
-  useEffect(() => {
-    currentConversationIdRef.current = currentConversationId;
-  }, [currentConversationId]);
-
-  // Load conversation details when selected
-  useEffect(() => {
-    if (currentConversationId) {
-      loadConversation(currentConversationId);
-    }
-  }, [currentConversationId]);
-
   const handleNewConversation = () => {
     // Show model selector modal instead of creating directly
     setShowModelSelector(true);
@@ -216,6 +196,8 @@ function App() {
         },
         ...conversations,
       ]);
+      currentConversationIdRef.current = newConv.id;
+      setCurrentConversation(newConv);
       setCurrentConversationId(newConv.id);
       setShowModelSelector(false);
     } catch (error) {
@@ -224,21 +206,20 @@ function App() {
   };
 
   const handleSelectConversation = (id) => {
-    // Save current streaming state before switching
-    if (currentConversationId && isLoading && currentConversation && currentConversationId === activeStreamingConvIdRef.current) {
-      streamingStateRef.current.set(currentConversationId, {
-        messages: currentConversation.messages,
-        isLoading: true
-      });
-    }
+    currentConversationIdRef.current = id;
+    conversationLoadVersionRef.current += 1;
+    setCurrentConversation(null);
     setCurrentConversationId(id);
+    loadConversation(id);
   };
 
   const handleDeleteConversation = async (id) => {
     try {
       await api.deleteConversation(id);
       // If deleted conversation was current, clear it
-      if (id === currentConversationId) {
+      if (id === currentConversationIdRef.current) {
+        currentConversationIdRef.current = null;
+        conversationLoadVersionRef.current += 1;
         setCurrentConversationId(null);
         setCurrentConversation(null);
       }
@@ -253,6 +234,8 @@ function App() {
   const handleDeleteAllConversations = async () => {
     try {
       await api.deleteAllConversations();
+      currentConversationIdRef.current = null;
+      conversationLoadVersionRef.current += 1;
       setCurrentConversationId(null);
       setCurrentConversation(null);
       loadConversations();
@@ -283,7 +266,8 @@ function App() {
   };
 
   const handleSendMessage = async (content, attachments = null, webSearchProvider = 'off') => {
-    if (!currentConversationId) return;
+    if (!currentConversationId || currentConversationId !== currentConversationIdRef.current
+      || currentConversation?.id !== currentConversationId || activeStreamingConvIdRef.current) return;
 
     setIsLoading(true);
     streamAbortRequestedRef.current = false;

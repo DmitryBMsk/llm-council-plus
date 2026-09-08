@@ -278,3 +278,18 @@ describe('App streaming state isolation', () => {
     expect(screen.getByTestId('toasts')).toHaveTextContent('Stream error: backend failed');
   });
 });
+
+describe('conversation selection races', () => {
+  it('ignores stale loads and prevents sending while selected conversation is loading', async () => {
+    let finishA;
+    api.getConversation.mockImplementation((id) => id === 'conv-a'
+      ? new Promise(resolve => { finishA = resolve; }) : Promise.resolve(cloneConversation(id)));
+    await renderReadyApp();
+    fireEvent.click(screen.getByRole('button', { name: 'Conversation A' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(api.sendMessageStream).not.toHaveBeenCalled();
+    await selectConversation('Conversation B', 'conv-b');
+    await act(async () => finishA(cloneConversation('conv-a')));
+    expect(screen.getByTestId('current-id')).toHaveTextContent('conv-b');
+  });
+});
