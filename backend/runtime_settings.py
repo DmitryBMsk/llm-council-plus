@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
+from .generation import GenerationLimits, GenerationStage, default_generation_limits
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,9 @@ class RuntimeSettings(BaseModel):
     council_temperature: float = Field(default=0.5, ge=0.0, le=2.0)
     stage2_temperature: float = Field(default=0.3, ge=0.0, le=2.0)
     chairman_temperature: float = Field(default=0.4, ge=0.0, le=2.0)
+
+    generation_limits: dict[GenerationStage, GenerationLimits] = Field(default_factory=default_generation_limits)
+    model_generation_limits: dict[str, dict[GenerationStage, GenerationLimits]] = Field(default_factory=dict)
 
     # Web search (non-secret). API keys stay in env / setup wizard.
     web_search_provider: str = Field(default="duckduckgo")  # off | duckduckgo | tavily | exa | brave

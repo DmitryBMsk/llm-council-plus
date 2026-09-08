@@ -29,4 +29,8 @@ async def test_missing_usage_does_not_invent_zero_cost(monkeypatch, provider, da
     monkeypatch.setattr(config, "OPENROUTER_API_KEY", "test-only")
     original = httpx.AsyncClient
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: original(transport=httpx.MockTransport(lambda request: httpx.Response(200, json=data)), **kwargs))
-    assert await provider.query_model("model", []) == {"content": "answer", "reasoning_details": None}
+    result = await provider.query_model("model", [])
+    assert result["content"] == "answer"
+    assert result["reasoning_details"] is None
+    assert "usage" not in result
+    assert result["truncated"] is None

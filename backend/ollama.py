@@ -6,6 +6,7 @@ import httpx
 from typing import List, Dict, Any, Union, TypedDict, Literal
 from . import config
 from .usage import record_usage
+from .generation import get_generation_limits, completion_metadata
 from .run_context import ensure_run_active
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ async def query_model(
     messages: List[Dict[str, str]],
     timeout: float = None,
     temperature: float | None = None,
+    stage: str | None = None,
 ) -> QueryResponse:
     """
     Query a single model via Ollama API.
@@ -58,13 +60,18 @@ async def query_model(
     
     url = f"http://{config.OLLAMA_HOST}/api/chat"
     
+    limits = get_generation_limits(model, stage)
+    if limits.reasoning_max_tokens is not None or limits.reasoning_effort is not None:
+        return {"error": True, "error_type": "configuration",
+                "error_message": "Reasoning controls are supported only by the OpenRouter adapter. Clear reasoning settings for Ollama."}
     payload = {
         "model": model,
         "messages": messages,
         "stream": False,
+        "options": {"num_predict": limits.max_tokens},
     }
     if temperature is not None:
-        payload["options"] = {"temperature": temperature}
+        payload["options"]["temperature"] = temperature
 
     await ensure_run_active()
     attempt_usage = None
@@ -94,7 +101,10 @@ async def query_model(
             if usage:
                 result['usage'] = usage
             attempt_usage = usage or None
-            outcome = 'success'
+            result.update(completion_metadata(
+                content=result['content'], finish_reason=data.get('done_reason'),
+                native_finish_reason=data.get('done_reason'), limits=limits))
+            outcome = 'truncated' if result['truncated'] else 'success'
             return result
 
     except asyncio.CancelledError:

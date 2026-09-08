@@ -6,6 +6,7 @@ import asyncio
 from typing import List, Dict, Any, Optional, Union
 from . import config
 from .usage import record_usage
+from .generation import get_generation_limits, completion_metadata
 from .run_context import ensure_run_active
 
 logger = logging.getLogger(__name__)
@@ -106,11 +107,18 @@ async def query_model(
         "Content-Type": "application/json",
     }
 
+    limits = get_generation_limits(model, stage)
     payload = {
         "model": model,
         "messages": messages,
-        "max_tokens": 8192,  # Limit to avoid credit issues
+        "max_tokens": limits.max_tokens,
     }
+    if limits.reasoning_max_tokens is not None:
+        payload["reasoning"] = {"max_tokens": limits.reasoning_max_tokens}
+    elif limits.reasoning_effort is not None:
+        payload["reasoning"] = {"effort": limits.reasoning_effort}
+    if "reasoning" in payload:
+        payload["provider"] = {"require_parameters": True}
     if temperature is not None:
         payload["temperature"] = temperature
 
@@ -141,7 +149,12 @@ async def query_model(
                 }
                 if isinstance(data.get('usage'), dict) and data['usage']:
                     result['usage'] = data['usage']
-                outcome = 'success'
+                choice = data['choices'][0]
+                result.update(completion_metadata(
+                    content=result['content'], finish_reason=choice.get('finish_reason'),
+                    native_finish_reason=choice.get('native_finish_reason'),
+                    generation_id=data.get('id'), limits=limits))
+                outcome = 'truncated' if result['truncated'] else 'success'
                 return result
 
         except asyncio.CancelledError:

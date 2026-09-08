@@ -121,10 +121,15 @@ def _save_memory_exchange(conversation_id: str, query: str, response: str) -> No
 
 
 def _usage_fields(response):
-    """Preserve actual provider usage without altering legacy no-usage payloads."""
-    if response and isinstance(response.get('usage'), dict):
-        return {'usage': response['usage']}
-    return {}
+    """Preserve completion diagnostics and usage across SSE and stored stages."""
+    if not response:
+        return {}
+    fields = ('finish_reason', 'native_finish_reason', 'generation_id', 'truncated',
+              'completion_status', 'effective_max_tokens', 'reasoning_max_tokens', 'reasoning_effort')
+    result = {key: response[key] for key in fields if key in response}
+    if isinstance(response.get('usage'), dict):
+        result['usage'] = response['usage']
+    return result
 
 
 # Conversation-history window sent to council models (see build_context_prompt)
@@ -999,7 +1004,8 @@ async def stage2_collect_rankings(
             logger.warning("[STAGE2] Model %s failed: %s", model, response.get('error_message'))
         else:
             full_text = response.get('content', '')
-            if full_text and full_text.strip():  # Additional validation
+            if (full_text and full_text.strip()) or response.get('truncated'):
+                full_text = full_text or ''
                 parsed = parse_ranking_from_text(full_text)
                 stage2_results.append({
                     "model": model,
@@ -1173,7 +1179,9 @@ async def stage3_synthesize_final(
             )
 
             # Check if fallback succeeded (not None and not error)
-            if fallback_response and not fallback_response.get('error') and fallback_response.get('content'):
+            if fallback_response and not fallback_response.get('error') and (
+                fallback_response.get('content') or fallback_response.get('truncated')
+            ):
                 logger.info("Fallback successful with model %s", fallback_model)
                 return {
                     "model": fallback_model,

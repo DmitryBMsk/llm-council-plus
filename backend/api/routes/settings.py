@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from typing import Optional
+from ...generation import GenerationLimits, GenerationStage
 
 from ..deps import get_current_user, require_settings_admin, can_edit_global_settings
 from ...runtime_settings import (
@@ -24,6 +25,9 @@ class UpdateRuntimeSettingsRequest(BaseModel):
     council_temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
     stage2_temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
     chairman_temperature: Optional[float] = Field(default=None, ge=0.0, le=2.0)
+
+    generation_limits: Optional[dict[GenerationStage, GenerationLimits]] = None
+    model_generation_limits: Optional[dict[str, dict[GenerationStage, GenerationLimits]]] = None
 
     web_search_provider: Optional[str] = Field(default=None, pattern="^(off|duckduckgo|tavily|exa|brave)$")
     web_max_results: Optional[int] = Field(default=None, ge=1, le=10)
