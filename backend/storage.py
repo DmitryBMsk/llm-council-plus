@@ -10,6 +10,8 @@ import json
 import logging
 import os
 import sys
+import tempfile
+import uuid
 from contextlib import contextmanager
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Generator, Callable
@@ -137,6 +139,69 @@ def get_conversation_path(conversation_id: str) -> str:
     return path
 
 
+@contextmanager
+def _conversation_lock(path: str):
+    # Lock identity must survive os.replace of the data inode. Never unlink it.
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(path + ".lock", "a+b") as lock:
+        lock.seek(0, os.SEEK_END)
+        if lock.tell() == 0:
+            lock.write(b"\0")
+            lock.flush()
+        with file_lock(lock, exclusive=True):
+            yield
+
+
+def _durable_replace(path: str, payload: str):
+    fd, temporary = tempfile.mkstemp(prefix=Path(path).name + ".", suffix=".tmp", dir=Path(path).parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        if os.name != "nt":
+            directory = os.open(str(Path(path).parent), os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def _read_json_locked(path: str):
+    if not os.path.exists(path):
+        return None
+    try:
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        backup = Path(path + ".bak")
+        try:
+            recovered = json.loads(backup.read_text(encoding="utf-8"))
+            if not isinstance(recovered, dict) or not isinstance(recovered.get("messages"), list):
+                raise ValueError("Invalid backup")
+        except (OSError, ValueError):
+            logger.error("Corrupt conversation %s has no valid backup", path)
+            return None
+        quarantine = path + ".corrupt-" + uuid.uuid4().hex
+        # Copy rather than move: crash during recovery must not make it disappear.
+        _durable_replace(quarantine, Path(path).read_text(encoding="utf-8", errors="replace"))
+        _durable_replace(path, json.dumps(recovered, indent=2))
+        logger.warning("Recovered %s from backup; corrupt copy retained at %s", path, quarantine)
+        return recovered
+
+
+def _write_json_locked(path: str, conversation):
+    payload = json.dumps(conversation, indent=2)
+    if os.path.exists(path):
+        previous = _read_json_locked(path)
+        if previous is not None:
+            _durable_replace(path + ".bak", json.dumps(previous, indent=2))
+    _durable_replace(path, payload)
+
+
 def _json_create_conversation(
     conversation_id: str,
     models: Optional[List[str]] = None,
@@ -163,12 +228,8 @@ def _json_create_conversation(
     }
 
     path = get_conversation_path(conversation_id)
-    # Serialize before opening 'w' (which truncates) so a serialization error
-    # cannot leave a destroyed/partial file behind.
-    payload = json.dumps(conversation, indent=2)
-    with open(path, 'w') as f:
-        with file_lock(f, exclusive=True):
-            f.write(payload)
+    with _conversation_lock(path):
+        _write_json_locked(path, conversation)
 
     return conversation
 
@@ -176,19 +237,10 @@ def _json_create_conversation(
 def _json_get_conversation(conversation_id: str) -> Optional[Dict[str, Any]]:
     """Get conversation from JSON file with shared lock."""
     path = get_conversation_path(conversation_id)
-
     if not os.path.exists(path):
         return None
-
-    try:
-        with open(path, 'r') as f:
-            with file_lock(f, exclusive=False):
-                return json.load(f)
-    except json.JSONDecodeError as e:
-        # A torn/corrupt file must not brick the conversation with 500s;
-        # treat it like a missing conversation (callers map None to 404).
-        logger.warning("Corrupt conversation file %s: %s", path, e)
-        return None
+    with _conversation_lock(path):
+        return _read_json_locked(path)
 
 
 def _json_save_conversation(conversation: Dict[str, Any]):
@@ -196,12 +248,8 @@ def _json_save_conversation(conversation: Dict[str, Any]):
     ensure_data_dir()
 
     path = get_conversation_path(conversation['id'])
-    # Serialize before opening 'w' (which truncates) so a serialization error
-    # cannot leave a destroyed/partial file behind.
-    payload = json.dumps(conversation, indent=2)
-    with open(path, 'w') as f:
-        with file_lock(f, exclusive=True):
-            f.write(payload)
+    with _conversation_lock(path):
+        _write_json_locked(path, conversation)
 
 
 def _json_update_conversation(conversation_id: str, update_fn: Callable[[Dict[str, Any]], None]) -> Dict[str, Any]:
@@ -213,29 +261,13 @@ def _json_update_conversation(conversation_id: str, update_fn: Callable[[Dict[st
     """
     ensure_data_dir()
     path = get_conversation_path(conversation_id)
-    if not os.path.exists(path):
-        raise ValueError(f"Conversation {conversation_id} not found")
-
-    # Use one file handle + one exclusive lock for the full read-modify-write cycle.
-    with open(path, "r+", encoding="utf-8") as f:
-        with file_lock(f, exclusive=True):
-            f.seek(0)
-            conversation = json.load(f)
-            update_fn(conversation)
-            # Serialize BEFORE truncating: if json.dumps raises (or the process
-            # dies mid-dump), the on-disk pre-image must stay intact.
-            payload = json.dumps(conversation, indent=2)
-            f.seek(0)
-            f.truncate()
-            f.write(payload)
-            f.flush()
-            try:
-                os.fsync(f.fileno())
-            except OSError:
-                # Best-effort: fsync may not be available on some platforms/filesystems.
-                pass
-
-            return conversation
+    with _conversation_lock(path):
+        conversation = _read_json_locked(path)
+        if conversation is None:
+            raise ValueError(f"Conversation {conversation_id} not found")
+        update_fn(conversation)
+        _write_json_locked(path, conversation)
+        return conversation
 
 
 def _json_list_conversations() -> List[Dict[str, Any]]:
@@ -244,46 +276,35 @@ def _json_list_conversations() -> List[Dict[str, Any]]:
 
     conversations = []
     for filename in os.listdir(config.DATA_DIR):
-        if filename.endswith('.json'):
-            path = os.path.join(config.DATA_DIR, filename)
-            try:
-                with open(path, 'r') as f:
-                    with file_lock(f, exclusive=False):
-                        data = json.load(f)
-                        conversations.append({
-                            "id": data["id"],
-                            "created_at": data["created_at"],
-                            "title": data.get("title", "New Conversation"),
-                            "message_count": len(data["messages"]),
-                            "username": data.get("username")
-                        })
-            except (json.JSONDecodeError, KeyError) as e:
-                logger.warning("Skipping malformed conversation file %s: %s", filename, e)
-                continue
-
+        if not filename.endswith('.json') or not validate_conversation_id(filename[:-5]):
+            continue
+        data = _json_get_conversation(filename[:-5])
+        if data and "id" in data and "created_at" in data and isinstance(data.get("messages"), list):
+            conversations.append({"id": data["id"], "created_at": data["created_at"],
+                                  "title": data.get("title", "New Conversation"),
+                                  "message_count": len(data["messages"]), "username": data.get("username")})
     conversations.sort(key=lambda x: x["created_at"], reverse=True)
     return conversations
 
 
 def _json_delete_conversation(conversation_id: str) -> bool:
-    """Delete conversation from JSON file."""
+    """Serialize deletion with writers and remove recovery data as well."""
     path = get_conversation_path(conversation_id)
-
-    if not os.path.exists(path):
-        return False
-
-    os.remove(path)
-    return True
+    with _conversation_lock(path):
+        existed = os.path.exists(path)
+        # Backups first: missing current file must never trigger recovery.
+        for candidate in [Path(path + ".bak"), *Path(path).parent.glob(Path(path).name + ".corrupt-*"),
+                          *Path(path).parent.glob(Path(path).name + ".*.tmp")]:
+            candidate.unlink(missing_ok=True)
+        Path(path).unlink(missing_ok=True)
+        return existed
 
 
 def _json_delete_all_conversations():
-    """Delete all conversations from JSON files."""
     ensure_data_dir()
-
-    for filename in os.listdir(config.DATA_DIR):
-        if filename.endswith('.json'):
-            path = os.path.join(config.DATA_DIR, filename)
-            os.remove(path)
+    for path in Path(config.DATA_DIR).glob("*.json"):
+        if validate_conversation_id(path.stem):
+            _json_delete_conversation(path.stem)
 
 
 # ==================== DATABASE STORAGE (Feature 2) ====================
@@ -690,11 +711,7 @@ def delete_conversation(conversation_id: str, *, username: Optional[str] = None)
     if is_using_database():
         return _db_delete_conversation(conversation_id)
 
-    path = get_conversation_path(conversation_id)
-    if os.path.exists(path):
-        os.remove(path)
-        return True
-    return False
+    return _json_delete_conversation(conversation_id)
 
 
 def delete_all_conversations(*, username: Optional[str] = None):
