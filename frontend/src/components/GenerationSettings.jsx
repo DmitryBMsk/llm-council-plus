@@ -14,7 +14,7 @@ export default function GenerationSettings({ draft, onChange, disabled, onValidi
       <label>Reasoning tokens (optional)<input aria-label={`${stage} reasoning tokens`} type="number" min="1024" max="65535" step="1" value={draft.generation_limits?.[stage]?.reasoning_max_tokens ?? ''} onChange={e => update(stage, 'reasoning_max_tokens', e.target.value === '' ? null : Number(e.target.value))} /></label>
       <label>Reasoning effort<select aria-label={`${stage} reasoning effort`} value={draft.generation_limits?.[stage]?.reasoning_effort ?? ''} onChange={e => update(stage, 'reasoning_effort', e.target.value || null)}><option value="">Provider default</option>{REASONING_EFFORTS.map(effort => <option key={effort}>{effort}</option>)}</select></label>
     </fieldset>)}
-    <p className="settings-hint">Choose reasoning tokens or effort, not both. Provider support varies; explicit reasoning controls are not supported by Ollama.</p>
+    <p className="settings-hint">Choose reasoning tokens or effort, not both. Explicit OpenRouter reasoning uses provider-default temperature. Provider support varies; explicit reasoning controls are not supported by Ollama.</p>
     <label className="settings-field">Model overrides (JSON, exact model IDs)
       <textarea aria-label="Model generation overrides" disabled={disabled} rows={8} value={overrides} onChange={e => {
         setOverrides(e.target.value);

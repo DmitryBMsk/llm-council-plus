@@ -17,6 +17,7 @@ This README is the operator guide for the current `main` branch. [VERSION](VERSI
 ## Operator documentation
 
 - [Run admission, idempotency and resource limits](docs/run-control.md)
+- [Generation budgets, truncation and explicit continuation](docs/generation-limits.md)
 - [Administrator permissions and migration](docs/settings-permissions.md)
 - [E2E setup and test isolation](e2e/README.md)
 - [Reviewed OpenAPI contract](docs/api/openapi.json)
@@ -215,6 +216,23 @@ Sizes are binary MiB, even where the UI says MB.
 The history builder keeps at most 12 messages, 24,000 characters and an estimated 6,000 history tokens. The provider's tokenizer may differ, and current prompts/attachments add to that history. Stage 2 uses a 90-second collection budget; chairman fallback is capped at two alternative models with a 45-second timeout per attempt. These are not a single end-to-end request deadline.
 
 Failed admitted runs count toward rate limits; rejected requests and idempotent replays do not. Quotas bound concurrency/frequency, not monetary spend. Usage reports count observed provider attempts, including title/fallback/retries; missing prices/tokens remain unknown. Keep upstream billing limits enabled where required.
+
+### Incomplete answers and generation budgets
+
+Settings → **Generation limits** configures output/reasoning budgets per stage,
+including title and continuation, with optional exact-model overrides. Defaults
+remain 8192 output tokens per call; they are never raised automatically. Reasoning
+shares the output budget, and larger limits can reserve more OpenRouter credits.
+With explicit reasoning, OpenRouter uses provider-default temperature; parameter
+support varies by model. Ollama supports the output limit only.
+
+Token-limited replies retain their finish reason and show a warning, even after
+reload. Older replies with missing metadata show a separate *possible truncation*
+notice. **Continue response (additional paid request)** calls only that model and
+adds a separate result, retaining the original answer and earlier council rankings.
+It does not automatically rerun or re-rank the council. See the
+[generation and continuation guide](docs/generation-limits.md) for bounds, API
+semantics and retry behavior.
 
 ## Verification and release workflow
 

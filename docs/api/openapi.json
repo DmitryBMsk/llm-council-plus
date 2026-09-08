@@ -15,6 +15,43 @@
         "title": "Body_upload_file_api_upload_post",
         "type": "object"
       },
+      "ContinueResponseRequest": {
+        "properties": {
+          "message_index": {
+            "minimum": 0.0,
+            "title": "Message Index",
+            "type": "integer"
+          },
+          "model": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "request_id": {
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "stage": {
+            "enum": [
+              "stage1",
+              "stage2",
+              "stage3"
+            ],
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message_index",
+          "stage",
+          "model",
+          "request_id"
+        ],
+        "title": "ContinueResponseRequest",
+        "type": "object"
+      },
       "Conversation": {
         "description": "Full conversation with all messages.",
         "properties": {
@@ -315,6 +352,53 @@
         "title": "FileAttachment",
         "type": "object"
       },
+      "GenerationLimits": {
+        "additionalProperties": false,
+        "properties": {
+          "max_tokens": {
+            "default": 8192,
+            "maximum": 65536.0,
+            "minimum": 128.0,
+            "title": "Max Tokens",
+            "type": "integer"
+          },
+          "reasoning_effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "minimal",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Effort"
+          },
+          "reasoning_max_tokens": {
+            "anyOf": [
+              {
+                "maximum": 65535.0,
+                "minimum": 1024.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Max Tokens"
+          }
+        },
+        "title": "GenerationLimits",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -560,6 +644,55 @@
               }
             ],
             "title": "Council Temperature"
+          },
+          "generation_limits": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/GenerationLimits"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "stage1",
+                    "stage2",
+                    "stage3",
+                    "title",
+                    "continuation"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generation Limits"
+          },
+          "model_generation_limits": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/GenerationLimits"
+                  },
+                  "propertyNames": {
+                    "enum": [
+                      "stage1",
+                      "stage2",
+                      "stage3",
+                      "title",
+                      "continuation"
+                    ]
+                  },
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Generation Limits"
           },
           "stage1_prompt_template": {
             "anyOf": [
@@ -1055,6 +1188,62 @@
           }
         ],
         "summary": "Download Attachment",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/api/conversations/{conversation_id}/continue": {
+      "post": {
+        "operationId": "continue_response_api_conversations__conversation_id__continue_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContinueResponseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Continue Response",
         "tags": [
           "conversations"
         ]

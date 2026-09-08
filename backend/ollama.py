@@ -3,6 +3,7 @@
 import logging
 import asyncio
 import httpx
+from starlette.concurrency import run_in_threadpool
 from typing import List, Dict, Any, Union, TypedDict, Literal
 from . import config
 from .usage import record_usage
@@ -60,7 +61,7 @@ async def query_model(
     
     url = f"http://{config.OLLAMA_HOST}/api/chat"
     
-    limits = get_generation_limits(model, stage)
+    limits = await run_in_threadpool(get_generation_limits, model, stage)
     if limits.reasoning_max_tokens is not None or limits.reasoning_effort is not None:
         return {"error": True, "error_type": "configuration",
                 "error_message": "Reasoning controls are supported only by the OpenRouter adapter. Clear reasoning settings for Ollama."}

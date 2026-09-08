@@ -29,17 +29,34 @@ async def chat(request: Request):
     # Let the browser exercise intermediate streaming state without arbitrary
     # waits in tests. Capture the full model request for follow-up assertions.
     await asyncio.sleep(0.05)
+    finish_reason = 'stop'
     if 'Generate a very short title' in text:
         answer = 'Local council result'
+    elif '__EMPTY_STAGE2__' in text and 'Original council context' in text:
+        answer = 'Evaluation complete.\nFINAL RANKING:\n1. Response A\n2. Response B'
+    elif '__EMPTY_STAGE2__' in text and text.startswith('You are evaluating different responses') and payload['model'] == MODELS[0]:
+        answer = ''
+        finish_reason = 'length'
+    elif '__CUT_STAGE3__' in text and any(m.get('role') == 'assistant' for m in payload['messages']):
+        answer = ' final continuation.'
+    elif '__CUT_STAGE3__' in text and text.startswith('You are the Chairman'):
+        answer = 'FINAL_PREFIX:'
+        finish_reason = 'length'
+    elif '__TRUNCATE_TEST__' in text and payload['model'] == MODELS[0]:
+        if any(m.get('role') == 'assistant' for m in payload['messages']):
+            answer = ' continuation completed.'
+        else:
+            answer = 'TRUNCATED_PREFIX:'
+            finish_reason = 'length'
     elif text.startswith('You are evaluating different responses'):
         answer = 'The responses agree.\n\nFINAL RANKING:\n1. Response A\n2. Response B\n3. Response C'
     else:
         answer = 'E2E_ANSWER_42: deterministic council response.'
     if request.url.path == '/v1/chat/completions':
-        return {'model': payload['model'], 'choices': [{'message': {'role': 'assistant', 'content': answer}}],
+        return {'id': f'gen-fixture-{len(calls)}', 'model': payload['model'], 'choices': [{'finish_reason': finish_reason, 'native_finish_reason': 'max_tokens' if finish_reason == 'length' else 'end_turn', 'message': {'role': 'assistant', 'content': answer}}],
                 'usage': {'prompt_tokens': 20, 'completion_tokens': 10, 'total_tokens': 30, 'cost': 0.0}}
     return {'model': payload['model'], 'message': {'role': 'assistant', 'content': answer},
-            'done': True, 'prompt_eval_count': 20, 'eval_count': 10}
+            'done': True, 'done_reason': finish_reason, 'prompt_eval_count': 20, 'eval_count': 10}
 
 
 def backend_app():

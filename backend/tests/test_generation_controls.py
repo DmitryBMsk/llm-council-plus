@@ -151,3 +151,28 @@ async def test_strict_reasoning_routing_does_not_require_optional_temperature(mo
     if reasoning:
         assert 'temperature' not in payloads[0]
         assert payloads[0]['provider'] == {'require_parameters': True}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('router', ['openrouter','ollama'])
+async def test_generation_settings_io_does_not_block_event_loop(monkeypatch,router):
+    import asyncio
+    import time
+    from backend.generation import GenerationLimits
+    module=openrouter if router=='openrouter' else ollama
+    monkeypatch.setattr(openrouter.config,'OPENROUTER_API_KEY','test-only')
+    def slow_settings(*args,**kwargs):
+        time.sleep(.2)
+        return GenerationLimits()
+    monkeypatch.setattr(module,'get_generation_limits',slow_settings)
+    async def post(self,url,**kwargs):
+        return httpx.Response(200,request=httpx.Request('POST',url),json={
+            'choices':[{'message':{'content':'answer'},'finish_reason':'stop'}],
+            'message':{'content':'answer'},'done_reason':'stop'})
+    started=time.monotonic()
+    async def timer():
+        await asyncio.sleep(.01)
+        return time.monotonic()-started
+    with patch.object(httpx.AsyncClient,'post',post):
+        _,delay=await asyncio.gather(module.query_model('model',[]),timer())
+    assert delay < .1

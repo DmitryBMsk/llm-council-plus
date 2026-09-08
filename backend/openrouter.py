@@ -2,6 +2,7 @@
 
 import logging
 import httpx
+from starlette.concurrency import run_in_threadpool
 import asyncio
 from typing import List, Dict, Any, Optional, Union
 from . import config
@@ -107,7 +108,7 @@ async def query_model(
         "Content-Type": "application/json",
     }
 
-    limits = get_generation_limits(model, stage)
+    limits = await run_in_threadpool(get_generation_limits, model, stage)
     payload = {
         "model": model,
         "messages": messages,

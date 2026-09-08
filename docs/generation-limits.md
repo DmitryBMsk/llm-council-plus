@@ -1,9 +1,9 @@
 # Generation limits and incomplete answers
 
-Each model call stores `finish_reason`, `native_finish_reason`, `generation_id`
+Provider adapters return `finish_reason`, `native_finish_reason`, `generation_id`
 (when supplied by OpenRouter), `effective_max_tokens`, configured reasoning controls,
 `completion_status`, `truncated`, and provider usage when supplied. These fields travel
-through council stages, SSE, and saved conversation results. No API credentials or
+through council response stages, SSE, and saved conversation results. No API credentials or
 request payloads are included in this metadata.
 
 `truncated: true` means the provider explicitly reported `length` or `max_tokens`.
@@ -87,3 +87,36 @@ These tests make no paid model calls.
 - [OpenRouter provider routing](https://openrouter.ai/docs/guides/routing/provider-selection)
 - [Ollama chat API](https://docs.ollama.com/api/chat)
 - [Ollama thinking](https://docs.ollama.com/capabilities/thinking)
+
+
+## Explicit continuation
+
+The warning appears on each token-limited stage response. Historical responses
+without finish metadata are labelled only as possibly truncated when usage reaches
+the saved limit (or the legacy 8192 limit). No historical text is rewritten.
+
+`POST /api/conversations/{id}/continue` accepts:
+
+```json
+{"message_index":1,"stage":"stage1","model":"anthropic/claude-fable-5.1","request_id":"00000000-0000-4000-8000-000000000001"}
+```
+
+The zero-based index identifies the stored assistant message; stage may be stage1/stage2/stage3.
+The server verifies ownership, source model and truncation evidence, retains the
+original bounded dialogue/document context and invokes only that model. It appends
+a new user/assistant pair atomically, with the combined answer, new completion
+metadata, usage and continuation provenance. Original answers, rankings and
+synthesis remain unchanged; they are not automatically recalculated. Repeated
+continuations follow the chain back to the original question and attachments.
+
+Continuation has its own stage budget. Increasing Stage1 alone does not change
+it. Empty reasoning-only output can be explicitly continued, but the next attempt
+can also exhaust its budget; consider adjusting the continuation controls first.
+The application never guarantees a model will finish within an arbitrary cap.
+Existing timeouts remain independent of token limits.
+
+A browser click is required for every attempt. Ambiguous network failures reuse
+the same request ID; confirmed failed/aborted runs require another deliberate click
+with a new ID. Successful replay does not incur another provider call. Errors do
+not replace the original text. Higher limits and new continuations can increase
+OpenRouter's required in-flight credit reservation.

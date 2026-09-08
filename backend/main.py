@@ -26,6 +26,7 @@ from .api.routes.auth_routes import router as auth_router
 from .api.routes.models import router as models_router
 from .api.routes.conversations import router as conversations_router
 from .api.routes.drive import router as drive_router
+from .api.routes.continuations import router as continuations_router
 
 app = FastAPI(title="LLM Council API")
 
@@ -73,6 +74,7 @@ app.include_router(auth_router)
 app.include_router(models_router)
 app.include_router(conversations_router)
 app.include_router(drive_router)
+app.include_router(continuations_router)
 
 
 # --- Backward-compatible imports for tests ---
