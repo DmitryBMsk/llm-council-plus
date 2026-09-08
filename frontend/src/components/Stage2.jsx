@@ -1,3 +1,4 @@
+import TruncationNotice from './TruncationNotice';
 import { useState, memo } from 'react';
 import PropTypes from 'prop-types';
 import ReactMarkdown from 'react-markdown';
@@ -30,7 +31,7 @@ function deAnonymizeText(text, labelToModel) {
   return result;
 }
 
-const Stage2 = memo(function Stage2({ rankings, labelToModel, aggregateRankings, timings }) {
+const Stage2 = memo(function Stage2({ rankings, labelToModel, aggregateRankings, timings, onContinue, busy }) {
   const [activeTab, setActiveTab] = useState(0);
 
   if (!rankings || rankings.length === 0) {
@@ -85,6 +86,7 @@ const Stage2 = memo(function Stage2({ rankings, labelToModel, aggregateRankings,
         <div className="ranking-model">
           {currentRanking.model}
         </div>
+        <TruncationNotice result={currentRanking} onContinue={onContinue} busy={busy} />
         {hasError ? (
           <div className="error-content">
             <div className="error-badge">
@@ -150,6 +152,8 @@ const Stage2 = memo(function Stage2({ rankings, labelToModel, aggregateRankings,
 });
 
 Stage2.propTypes = {
+  onContinue: PropTypes.func,
+  busy: PropTypes.bool,
   rankings: PropTypes.arrayOf(
     PropTypes.shape({
       model: PropTypes.string.isRequired,

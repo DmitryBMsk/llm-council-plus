@@ -1,3 +1,4 @@
+import TruncationNotice from './TruncationNotice';
 import { memo } from 'react';
 import PropTypes from 'prop-types';
 import ReactMarkdown from 'react-markdown';
@@ -5,7 +6,7 @@ import remarkGfm from 'remark-gfm';
 import { formatDuration, formatTimestamp } from '../utils/timing';
 import './Stage3.css';
 
-const Stage3 = memo(function Stage3({ finalResponse, timings }) {
+const Stage3 = memo(function Stage3({ finalResponse, timings, onContinue, busy }) {
   if (!finalResponse) {
     return null;
   }
@@ -32,6 +33,7 @@ const Stage3 = memo(function Stage3({ finalResponse, timings }) {
         <div className="chairman-label">
           Chairman: {finalResponse.model.split('/')[1] || finalResponse.model}
         </div>
+        <TruncationNotice result={finalResponse} onContinue={onContinue} busy={busy} />
         <div className="final-text markdown-content">
           <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{finalResponse.response}</ReactMarkdown>
         </div>
@@ -41,6 +43,8 @@ const Stage3 = memo(function Stage3({ finalResponse, timings }) {
 });
 
 Stage3.propTypes = {
+  onContinue: PropTypes.func,
+  busy: PropTypes.bool,
   finalResponse: PropTypes.shape({
     model: PropTypes.string.isRequired,
     response: PropTypes.string.isRequired,

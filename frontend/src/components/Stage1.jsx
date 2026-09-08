@@ -1,3 +1,4 @@
+import TruncationNotice from './TruncationNotice';
 import { useState, memo } from 'react';
 import PropTypes from 'prop-types';
 import ReactMarkdown from 'react-markdown';
@@ -17,7 +18,7 @@ const ERROR_MESSAGES = {
   unknown: 'Unknown error',
 };
 
-const Stage1 = memo(function Stage1({ responses, timings, isStreaming }) {
+const Stage1 = memo(function Stage1({ responses, timings, isStreaming, onContinue, busy }) {
   const [activeTab, setActiveTab] = useState(0);
 
   if (!responses || responses.length === 0) {
@@ -72,6 +73,7 @@ const Stage1 = memo(function Stage1({ responses, timings, isStreaming }) {
 
       <div className={`tab-content ${hasError ? 'tab-content-error' : ''}`}>
         <div className="model-name">{currentResponse.model}</div>
+        <TruncationNotice result={currentResponse} onContinue={onContinue} busy={busy} />
         {hasError ? (
           <div className="error-content">
             <div className="error-badge">
@@ -92,6 +94,8 @@ const Stage1 = memo(function Stage1({ responses, timings, isStreaming }) {
 });
 
 Stage1.propTypes = {
+  onContinue: PropTypes.func,
+  busy: PropTypes.bool,
   responses: PropTypes.arrayOf(
     PropTypes.shape({
       model: PropTypes.string.isRequired,

@@ -76,6 +76,16 @@ async function authFetch(url, options = {}) {
 }
 
 export const api = {
+  async continueResponse(conversationId, body) {
+    const response = await authFetch(`${API_BASE}/api/conversations/${conversationId}/continue`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(typeof error.detail === 'string' ? error.detail : `Continuation failed (${response.status})`);
+    }
+    return response.json();
+  },
   /**
    * Get authentication status from backend.
    * Public endpoint - no auth required.

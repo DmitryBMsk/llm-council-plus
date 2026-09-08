@@ -72,6 +72,8 @@ function RealtimeTimer({ startTime }) {
 export default function ChatInterface({
   conversation,
   onSendMessage,
+  onContinueResponse,
+  continuationBusy = false,
   onAbort,
   onUploadFile,
   isLoading,
@@ -385,6 +387,7 @@ export default function ChatInterface({
                     </div>
                   )}
 
+                  {msg.metadata?.continuation_of && <p role="status">Continuation from {msg.metadata.continuation_of.model}. Previous rankings and synthesis were not rerun.</p>}
                   <SearchContext toolOutputs={msg.metadata?.tool_outputs || msg.tool_outputs} />
 
                   {/* Stage 1 */}
@@ -399,7 +402,7 @@ export default function ChatInterface({
                   )}
                   {/* Show Stage1 component even while loading to display streaming responses */}
                   {msg.stage1 && msg.stage1.length > 0 && (
-                    <Stage1 responses={msg.stage1} timings={msg.timings?.stage1} isStreaming={msg.loading?.stage1} />
+                    <Stage1 busy={isLoading || continuationBusy} onContinue={onContinueResponse ? model => onContinueResponse(index, 'stage1', model) : undefined} responses={msg.stage1} timings={msg.timings?.stage1} isStreaming={msg.loading?.stage1} />
                   )}
 
                   {/* Stage 2 */}
@@ -414,6 +417,8 @@ export default function ChatInterface({
                   )}
                   {msg.stage2 && (
                     <Stage2
+                      busy={isLoading || continuationBusy}
+                      onContinue={onContinueResponse ? model => onContinueResponse(index, 'stage2', model) : undefined}
                       rankings={msg.stage2}
                       labelToModel={msg.metadata?.label_to_model}
                       aggregateRankings={msg.metadata?.aggregate_rankings}
@@ -431,7 +436,7 @@ export default function ChatInterface({
                       <RealtimeTimer startTime={msg.timings?.stage3?.start} />
                     </div>
                   )}
-                  {msg.stage3 && <Stage3 finalResponse={msg.stage3} timings={msg.timings?.stage3} />}
+                  {msg.stage3 && <Stage3 busy={isLoading || continuationBusy} onContinue={onContinueResponse ? model => onContinueResponse(index, 'stage3', model) : undefined} finalResponse={msg.stage3} timings={msg.timings?.stage3} />}
 
                   {/* Token Stats - show TOON savings after Stage 3 */}
                   {msg.stage3 && msg.metadata?.token_stats && (

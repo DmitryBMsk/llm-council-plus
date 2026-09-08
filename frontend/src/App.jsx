@@ -17,6 +17,9 @@ function App() {
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [continuationBusy, setContinuationBusy] = useState(false);
+  const continuationPendingRef = useRef(false);
+  const continuationRequestIdsRef = useRef(new Map());
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [driveStatus, setDriveStatus] = useState({ enabled: false, configured: false });
@@ -292,9 +295,31 @@ function App() {
     }
   };
 
+  const handleContinueResponse = async (messageIndex, stage, model) => {
+    const id = currentConversationIdRef.current;
+    if (!id || currentConversation?.id !== id || continuationPendingRef.current || activeStreamingConvIdRef.current) return;
+    continuationPendingRef.current = true;
+    setContinuationBusy(true);
+    const key = JSON.stringify([id, messageIndex, stage, model]);
+    const requestId = continuationRequestIdsRef.current.get(key) || crypto.randomUUID();
+    continuationRequestIdsRef.current.set(key, requestId);
+    try {
+      await api.continueResponse(id, { message_index: messageIndex, stage, model, request_id: requestId });
+      // A retry uses the same id: a lost HTTP response must not charge twice.
+      streamingStateRef.current.delete(id);
+      if (id === currentConversationIdRef.current) await loadConversation(id);
+      await loadConversations();
+    } catch (error) {
+      addToast(error.message || 'Continuation failed');
+    } finally {
+      continuationPendingRef.current = false;
+      setContinuationBusy(false);
+    }
+  };
+
   const handleSendMessage = async (content, attachments = null, webSearchProvider = 'off') => {
     if (!currentConversationId || currentConversationId !== currentConversationIdRef.current
-      || currentConversation?.id !== currentConversationId || activeStreamingConvIdRef.current) return;
+      || currentConversation?.id !== currentConversationId || activeStreamingConvIdRef.current || continuationPendingRef.current) return;
 
     setIsLoading(true);
     streamAbortRequestedRef.current = false;
@@ -664,9 +689,11 @@ function App() {
         <ChatInterface
           conversation={currentConversation}
           onSendMessage={handleSendMessage}
-          onAbort={handleAbortStream}
+          onContinueResponse={handleContinueResponse}
+          continuationBusy={continuationBusy}
+          onAbort={continuationBusy ? undefined : handleAbortStream}
           onUploadFile={api.uploadFile}
-          isLoading={isLoading}
+          isLoading={isLoading || continuationBusy}
           webSearchAvailable={webSearchAvailable}
           tavilyEnabled={tavilyEnabled}
           exaEnabled={exaEnabled}
