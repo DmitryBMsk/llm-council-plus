@@ -310,7 +310,12 @@ function App() {
       if (id === currentConversationIdRef.current) await loadConversation(id);
       await loadConversations();
     } catch (error) {
-      addToast(error.message || 'Continuation failed');
+      if (['failed', 'aborted'].includes(error.runStatus)) {
+        continuationRequestIdsRef.current.delete(key);
+        addToast(`${error.message || 'Continuation failed'}. The next click starts a new paid request.`, 'error', 10000);
+      } else {
+        addToast(error.message || 'Continuation failed');
+      }
     } finally {
       continuationPendingRef.current = false;
       setContinuationBusy(false);

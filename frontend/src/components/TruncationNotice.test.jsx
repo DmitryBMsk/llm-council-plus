@@ -20,3 +20,13 @@ describe('TruncationNotice', () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+it('uses saved effective limit for inference without finish metadata', () => {
+  render(<TruncationNotice result={{ model: 'a', effective_max_tokens: 4096, usage: { completion_tokens: 4096 } }} />);
+  expect(screen.getByText('May be truncated (legacy token limit)')).toBeVisible();
+});
+it('never infers truncation against an explicit false or native stop', () => {
+  const { container, rerender } = render(<TruncationNotice result={{ model: 'a', truncated: false, usage: { completion_tokens: 8192 } }} />);
+  expect(container).toBeEmptyDOMElement();
+  rerender(<TruncationNotice result={{ model: 'a', native_finish_reason: 'stop', usage: { completion_tokens: 8192 } }} />);
+  expect(container).toBeEmptyDOMElement();
+});

@@ -2,10 +2,11 @@ import './TruncationNotice.css';
 
 export default function TruncationNotice({ result, onContinue, busy = false }) {
   if (!result) return null;
-  const truncated = result.truncated === true || result.finish_reason === 'length'
-    || result.native_finish_reason === 'max_tokens';
-  const legacy = result.truncated == null && !result.finish_reason && !result.effective_max_tokens
-    && Number(result.usage?.completion_tokens) >= 8192;
+  const capReasons = ['length', 'max_tokens'];
+  const truncated = result.truncated === true || capReasons.includes(result.finish_reason?.toLowerCase())
+    || capReasons.includes(result.native_finish_reason?.toLowerCase());
+  const legacy = result.truncated == null && !result.finish_reason && !result.native_finish_reason
+    && Number(result.usage?.completion_tokens) >= Number(result.effective_max_tokens || 8192);
   if (!truncated && !legacy) return null;
   return (
     <div className="truncation-notice" role="status">

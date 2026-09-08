@@ -82,7 +82,13 @@ export const api = {
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(typeof error.detail === 'string' ? error.detail : `Continuation failed (${response.status})`);
+      const detail = error.detail;
+      const failure = new Error(typeof detail === 'string' ? detail : detail?.message || `Continuation failed (${response.status})`);
+      failure.status = response.status;
+      failure.code = detail?.code;
+      failure.runStatus = detail?.status;
+      failure.runId = detail?.run_id;
+      throw failure;
     }
     return response.json();
   },
