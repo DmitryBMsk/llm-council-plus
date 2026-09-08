@@ -1,3 +1,4 @@
+# Direct generator tests isolate orchestration; admission is exercised via HTTP in test_run_admission_api.
 """Regression tests for batch 3 fixes.
 
 - Custom system prompt must flow end-to-end: request model -> storage -> stage1.
@@ -97,7 +98,7 @@ async def test_send_message_stream_passes_system_prompt_to_stage1():
             web_search = False
             web_search_provider = None
 
-        response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+        response = await send_message_stream.__wrapped__(conversation_id, MockRequest(), current_user="guest")
         async for _chunk in response.body_iterator:
             pass
 

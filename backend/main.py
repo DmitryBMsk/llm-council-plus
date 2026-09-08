@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 from .api.deps import VERSION
 from .auth import validate_jwt_config
 from .database import init_database
+from .body_limits import RequestBodyLimitMiddleware
 
 # --- Import routers ---
 from .api.routes.settings import router as settings_router
@@ -39,6 +40,9 @@ async def startup_event():
     # Lock the setup wizard on deployments already configured via env vars
     from .api.routes.setup import mark_setup_complete_if_configured
     mark_setup_complete_if_configured()
+
+# Bound request bytes before route parsing; CORS wraps rejection responses.
+app.add_middleware(RequestBodyLimitMiddleware)
 
 # Enable CORS for local development
 app.add_middleware(

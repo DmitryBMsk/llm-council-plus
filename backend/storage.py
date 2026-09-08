@@ -18,6 +18,8 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Generator, Callable
 from pathlib import Path
 from . import config
+from .run_context import active_ticket
+from .run_control import forget_conversation_runs
 from .attachments import persist_attachments, delete_attachments
 from .database import is_using_database, SessionLocal
 from .models import Conversation as ConversationModel
@@ -617,6 +619,9 @@ def add_user_message(conversation_id: str, content: str, attachments=None):
         content: User message content
     """
     def _update(conv: Dict[str, Any]) -> None:
+        ticket = active_ticket.get()
+        if ticket is not None:
+            ticket.ensure_active()
         message = {"role": "user", "content": content}
         if attachments:
             message["attachments"] = persist_attachments(conversation_id, attachments)
@@ -660,6 +665,9 @@ def add_assistant_message(
         message["metadata"] = metadata
 
     def _update(conv: Dict[str, Any]) -> None:
+        ticket = active_ticket.get()
+        if ticket is not None:
+            ticket.ensure_active()
         conv.setdefault("messages", []).append(message)
     if is_using_database():
         _db_update_conversation(conversation_id, _update)
@@ -704,11 +712,14 @@ def delete_conversation(conversation_id: str, *, username: Optional[str] = None)
     if conv is None:
         return False
 
+    forget_conversation_runs(conversation_id)
     if is_using_database():
         deleted = _db_delete_conversation(conversation_id)
     else:
         deleted = _json_delete_conversation(conversation_id)
     if deleted:
+        # A request may have passed its first existence check during deletion.
+        forget_conversation_runs(conversation_id)
         delete_attachments(conversation_id)
     return deleted
 

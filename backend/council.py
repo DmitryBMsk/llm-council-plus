@@ -120,6 +120,13 @@ def _save_memory_exchange(conversation_id: str, query: str, response: str) -> No
         CouncilMemorySystem(conversation_id).save_exchange(query, response)
 
 
+def _usage_fields(response):
+    """Preserve actual provider usage without altering legacy no-usage payloads."""
+    if response and isinstance(response.get('usage'), dict):
+        return {'usage': response['usage']}
+    return {}
+
+
 # Conversation-history window sent to council models (see build_context_prompt)
 MAX_CONTEXT_MESSAGES = 12   # last 6 user/assistant exchanges
 MAX_CONTEXT_CHARS = 24_000  # total character budget for the history block
@@ -713,13 +720,15 @@ Search Results:
                 "model": model,
                 "error": True,
                 "error_type": response.get('error_type', 'unknown'),
-                "error_message": response.get('error_message', 'Unknown error')
+                "error_message": response.get('error_message', 'Unknown error'),
+                **_usage_fields(response)
             })
         else:
             # Successful response
             stage1_results.append({
                 "model": model,
-                "response": response.get('content', '')
+                "response": response.get('content', ''),
+                **_usage_fields(response)
             })
 
     return stage1_results, tool_outputs
@@ -850,13 +859,15 @@ Search Results:
                 "model": model,
                 "error": True,
                 "error_type": response.get('error_type', 'unknown'),
-                "error_message": response.get('error_message', 'Unknown error')
+                "error_message": response.get('error_message', 'Unknown error'),
+                **_usage_fields(response)
             }
         else:
             # Successful response
             yield {
                 "model": model,
-                "response": response.get('content', '')
+                "response": response.get('content', ''),
+                **_usage_fields(response)
             }
 
 
@@ -982,7 +993,8 @@ async def stage2_collect_rankings(
                 "model": model,
                 "error": True,
                 "error_type": response.get('error_type', 'unknown'),
-                "error_message": response.get('error_message', 'Unknown error')
+                "error_message": response.get('error_message', 'Unknown error'),
+                **_usage_fields(response)
             })
             logger.warning("[STAGE2] Model %s failed: %s", model, response.get('error_message'))
         else:
@@ -992,7 +1004,8 @@ async def stage2_collect_rankings(
                 stage2_results.append({
                     "model": model,
                     "ranking": full_text,
-                    "parsed_ranking": parsed
+                    "parsed_ranking": parsed,
+                    **_usage_fields(response)
                 })
             else:
                 failed_count += 1
@@ -1000,7 +1013,8 @@ async def stage2_collect_rankings(
                     "model": model,
                     "error": True,
                     "error_type": "empty",
-                    "error_message": "Model returned empty response"
+                    "error_message": "Model returned empty response",
+                    **_usage_fields(response)
                 })
                 logger.warning("[STAGE2] Model %s returned empty content", model)
 
@@ -1165,7 +1179,8 @@ async def stage3_synthesize_final(
                     "model": fallback_model,
                     "response": fallback_response.get('content', ''),
                     "fallback_used": True,
-                    "original_chairman": chairman_model
+                    "original_chairman": chairman_model,
+                    **_usage_fields(fallback_response)
                 }
             else:
                 fail_reason = fallback_response.get('error_message') if fallback_response else 'No response'
@@ -1187,7 +1202,8 @@ async def stage3_synthesize_final(
 
     return {
         "model": chairman_model,
-        "response": response.get('content', '')
+        "response": response.get('content', ''),
+        **_usage_fields(response)
     }
 
 

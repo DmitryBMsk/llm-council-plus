@@ -1,3 +1,4 @@
+# Direct generator tests isolate orchestration; admission is exercised via HTTP in test_run_admission_api.
 """Tests for conversation-level execution modes (chat_only/chat_ranking/full)."""
 
 import asyncio
@@ -184,7 +185,7 @@ async def test_stream_chat_only_skips_stage2_and_stage3():
             web_search = False
             web_search_provider = None
 
-        response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+        response = await send_message_stream.__wrapped__(conversation_id, MockRequest(), current_user="guest")
 
         chunks = []
         async for chunk in response.body_iterator:
@@ -252,7 +253,7 @@ async def test_stream_chat_only_emits_tool_outputs_token_stats_and_title_for_fir
             web_search = False
             web_search_provider = None
 
-        response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+        response = await send_message_stream.__wrapped__(conversation_id, MockRequest(), current_user="guest")
         events = await _collect_sse_events(response)
 
     assert [event["type"] for event in events] == [
@@ -339,7 +340,7 @@ async def test_stream_chat_ranking_stops_after_stage2_with_heartbeat_and_metadat
             web_search = False
             web_search_provider = None
 
-        response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+        response = await send_message_stream.__wrapped__(conversation_id, MockRequest(), current_user="guest")
         events = await _collect_sse_events(response)
 
     assert [event["type"] for event in events] == [
@@ -434,7 +435,7 @@ async def test_stream_full_mode_emits_stage3_heartbeat_and_stage3_complete():
             web_search = False
             web_search_provider = None
 
-        response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+        response = await send_message_stream.__wrapped__(conversation_id, MockRequest(), current_user="guest")
         events = await _collect_sse_events(response)
 
     assert [event["type"] for event in events] == [
@@ -548,7 +549,7 @@ async def test_full_mode_first_message_emits_title_complete():
             web_search = False
             web_search_provider = None
 
-        response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+        response = await send_message_stream.__wrapped__(conversation_id, MockRequest(), current_user="guest")
         events = await _collect_sse_events(response)
 
     event_types = [e["type"] for e in events]

@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from . import config
 from . import openrouter, ollama
+from .usage import stage_scope
 
 logger = logging.getLogger(__name__)
 
@@ -55,23 +56,24 @@ async def query_model(
     retry_on_rate_limit: bool = True,
     temperature: float | None = None,
 ) -> Optional[Dict[str, Any]]:
-    rt = _normalize_router_type(router_type)
-    if rt == "openrouter":
-        return await openrouter.query_model(
+    with stage_scope(stage or None):
+        rt = _normalize_router_type(router_type)
+        if rt == "openrouter":
+            return await openrouter.query_model(
+                model=model,
+                messages=messages,
+                timeout=timeout,
+                stage=stage,
+                retry_on_rate_limit=retry_on_rate_limit,
+                temperature=temperature,
+            )
+
+        return await ollama.query_model(
             model=model,
-            messages=messages,
+            messages=messages,  # type: ignore[arg-type]
             timeout=timeout,
-            stage=stage,
-            retry_on_rate_limit=retry_on_rate_limit,
             temperature=temperature,
         )
-
-    return await ollama.query_model(
-        model=model,
-        messages=messages,  # type: ignore[arg-type]
-        timeout=timeout,
-        temperature=temperature,
-    )
 
 
 async def query_models_parallel(
@@ -82,21 +84,22 @@ async def query_models_parallel(
     stage: str | None = None,
     temperature: float | None = None,
 ) -> Dict[str, Optional[Dict[str, Any]]]:
-    rt = _normalize_router_type(router_type)
-    if rt == "openrouter":
-        return await openrouter.query_models_parallel(
+    with stage_scope(stage or 'STAGE1'):
+        rt = _normalize_router_type(router_type)
+        if rt == "openrouter":
+            return await openrouter.query_models_parallel(
+                models=models,
+                messages=messages,
+                stage=stage,
+                temperature=temperature,
+            )
+
+        # Ollama router doesn't accept stage.
+        return await ollama.query_models_parallel(
             models=models,
-            messages=messages,
-            stage=stage,
+            messages=messages,  # type: ignore[arg-type]
             temperature=temperature,
         )
-
-    # Ollama router doesn't accept stage.
-    return await ollama.query_models_parallel(
-        models=models,
-        messages=messages,  # type: ignore[arg-type]
-        temperature=temperature,
-    )
 
 
 async def query_models_streaming(
@@ -107,21 +110,20 @@ async def query_models_streaming(
     temperature: float | None = None,
 ):
     rt = _normalize_router_type(router_type)
-    if rt == "openrouter":
-        async for item in openrouter.query_models_streaming(
-            models=models,
-            messages=messages,
-            temperature=temperature,
-        ):
+    provider = openrouter if rt == "openrouter" else ollama
+    iterator = provider.query_models_streaming(models=models, messages=messages, temperature=temperature)
+    try:
+        while True:
+            # Scope the await that starts/advances provider tasks, not the
+            # generator yield: aclose may run in another task/context.
+            with stage_scope('STAGE1'):
+                try:
+                    item = await iterator.__anext__()
+                except StopAsyncIteration:
+                    break
             yield item
-        return
-
-    async for item in ollama.query_models_streaming(
-        models=models,
-        messages=messages,  # type: ignore[arg-type]
-        temperature=temperature,
-    ):
-        yield item
+    finally:
+        await iterator.aclose()
 
 
 async def query_models_with_stage_timeout(
@@ -134,23 +136,23 @@ async def query_models_with_stage_timeout(
     min_results: int = 3,
     temperature: float | None = None,
 ) -> Dict[str, Optional[Dict[str, Any]]]:
-    rt = _normalize_router_type(router_type)
-    if rt == "openrouter":
-        return await openrouter.query_models_with_stage_timeout(
+    with stage_scope(stage or 'STAGE2'):
+        rt = _normalize_router_type(router_type)
+        if rt == "openrouter":
+            return await openrouter.query_models_with_stage_timeout(
+                models=models,
+                messages=messages,
+                stage=stage,
+                stage_timeout=stage_timeout,
+                min_results=min_results,
+                temperature=temperature,
+            )
+
+        return await ollama.query_models_with_stage_timeout(
             models=models,
-            messages=messages,
+            messages=messages,  # type: ignore[arg-type]
             stage=stage,
             stage_timeout=stage_timeout,
             min_results=min_results,
             temperature=temperature,
         )
-
-    return await ollama.query_models_with_stage_timeout(
-        models=models,
-        messages=messages,  # type: ignore[arg-type]
-        stage=stage,
-        stage_timeout=stage_timeout,
-        min_results=min_results,
-        temperature=temperature,
-    )
-

@@ -5,6 +5,8 @@ import httpx
 import asyncio
 from typing import List, Dict, Any, Optional, Union
 from . import config
+from .usage import record_usage
+from .run_context import ensure_run_active
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +119,9 @@ async def query_model(
     backoff = INITIAL_BACKOFF_SECONDS
 
     while True:
+        await ensure_run_active()
+        attempt_usage = None
+        outcome = 'error'
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(
@@ -127,13 +132,21 @@ async def query_model(
                 response.raise_for_status()
 
                 data = response.json()
+                attempt_usage = data.get('usage')
                 message = data['choices'][0]['message']
 
-                return {
+                result = {
                     'content': message.get('content'),
                     'reasoning_details': message.get('reasoning_details')
                 }
+                if isinstance(data.get('usage'), dict) and data['usage']:
+                    result['usage'] = data['usage']
+                outcome = 'success'
+                return result
 
+        except asyncio.CancelledError:
+            outcome = 'cancelled'
+            raise
         except httpx.ConnectError as e:
             logger.error("Connection error querying model %s: Cannot connect to OpenRouter API. Error: %s", model, e)
             return {
@@ -142,6 +155,10 @@ async def query_model(
                 'error_message': 'Cannot connect to OpenRouter API'
             }
         except httpx.HTTPStatusError as e:
+            try:
+                attempt_usage = e.response.json().get('usage')
+            except (ValueError, AttributeError):
+                pass
             # Handle 429 rate limit with retry
             if e.response.status_code == 429 and retry_on_rate_limit and retries < MAX_RETRIES:
                 retries += 1
@@ -202,6 +219,8 @@ async def query_model(
                 'error_type': 'unknown',
                 'error_message': str(e)
             }
+        finally:
+            record_usage('openrouter', model, attempt_usage, stage=stage, outcome=outcome)
 
 
 async def query_models_parallel(

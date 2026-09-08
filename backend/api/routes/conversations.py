@@ -16,13 +16,14 @@ import logging
 from ... import attachments as attachment_store
 from ... import storage
 from ... import config
+from ...run_routes import managed_run, validate_models
 from ...council import (
     run_full_council, generate_conversation_title,
     stage1_collect_responses_streaming,
     stage2_collect_rankings, stage3_synthesize_final,
     calculate_aggregate_rankings, reset_token_stats, get_token_stats
 )
-from ...file_parser import parse_file, get_supported_extensions, is_image_file
+from ...file_parser import parse_file, get_supported_extensions, is_image_file, PdfParseBusy, PdfParseLimit
 from ..deps import get_current_user, _ownership_username
 from .models import _get_models_cache_lock, _models_cache
 
@@ -53,6 +54,12 @@ class CreateConversationRequest(BaseModel):
     execution_mode: Optional[str] = Field(default=None, pattern="^(chat_only|chat_ranking|full)$")
     router_type: Optional[str] = Field(default=None, pattern="^(openrouter|ollama)$")
     system_prompt: Optional[str] = Field(default=None, max_length=10_000)  # Custom per-conversation system prompt
+
+
+    @field_validator('models')
+    @classmethod
+    def validate_model_selection(cls, value):
+        return validate_models(value)
 
 
 class FileAttachment(BaseModel):
@@ -98,6 +105,7 @@ class FileAttachment(BaseModel):
 class SendMessageRequest(BaseModel):
     """Request to send a message in a conversation."""
     content: str = Field(min_length=1, max_length=100_000)  # 100KB text limit
+    request_id: Optional[str] = Field(default=None, max_length=36)
     attachments: Optional[List[FileAttachment]] = Field(default=None, max_length=5)  # Max 5 attachments
     temporary: Optional[bool] = False  # If True, don't save to storage (Feature 5)
     web_search: Optional[bool] = False  # DEPRECATED: use web_search_provider
@@ -414,6 +422,10 @@ async def upload_file(
 
         return response
 
+    except PdfParseBusy as e:
+        raise HTTPException(429, str(e), headers={"Retry-After": "1"}) from e
+    except PdfParseLimit as e:
+        raise HTTPException(400, str(e)) from e
     except HTTPException:
         raise
     except Exception as e:
@@ -424,6 +436,7 @@ async def upload_file(
 
 
 @router.post("/api/conversations/{conversation_id}/message")
+@managed_run()
 async def send_message(
     conversation_id: str,
     request: SendMessageRequest,
@@ -536,6 +549,7 @@ async def send_message(
 
 
 @router.post("/api/conversations/{conversation_id}/message/stream")
+@managed_run(streaming=True)
 async def send_message_stream(
     conversation_id: str,
     request: SendMessageRequest,

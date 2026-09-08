@@ -1,3 +1,4 @@
+# Direct generator tests isolate orchestration; admission is exercised via HTTP in test_run_admission_api.
 """API tests for per-conversation router_type."""
 
 from __future__ import annotations
@@ -103,7 +104,7 @@ async def test_send_message_stream_passes_router_type_to_council():
             web_search = False
             web_search_provider = None
 
-        response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+        response = await send_message_stream.__wrapped__(conversation_id, MockRequest(), current_user="guest")
 
         chunks = []
         async for chunk in response.body_iterator:

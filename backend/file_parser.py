@@ -1,6 +1,12 @@
 """File parsing utilities for PDF, TXT, MD, and image files."""
 
 import base64
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import threading
 from typing import Tuple
 
 # Supported image extensions
@@ -16,28 +22,62 @@ IMAGE_MIME_TYPES = {
 }
 
 
+class PdfParseLimit(ValueError):
+    """Invalid PDF or a resource limit exceeded; API should respond 400."""
+
+
+class PdfParseBusy(PdfParseLimit):
+    """All local PDF slots occupied; API should respond 429 (catch first)."""
+
+
+_PDF_PARSE_SLOTS = threading.BoundedSemaphore(2)
+
+
 def parse_pdf(file_content: bytes) -> str:
-    """
-    Parse PDF file content to markdown text.
-
-    Args:
-        file_content: Raw bytes of the PDF file
-
-    Returns:
-        Extracted text in markdown format
-    """
-    import pymupdf4llm
-    import pymupdf
-
-    # Open PDF from bytes
-    doc = pymupdf.open(stream=file_content, filetype="pdf")
-
-    # Convert to markdown
-    md_text = pymupdf4llm.to_markdown(doc)
-
-    doc.close()
-
-    return md_text
+    """Parse in a disposable process, with finite time, pages and output."""
+    if len(file_content) > 10 * 1024 * 1024:
+        raise PdfParseLimit('PDF exceeds input limit (10 MiB)')
+    if not _PDF_PARSE_SLOTS.acquire(blocking=False):
+        raise PdfParseBusy('PDF parser busy; retry shortly')
+    process = None
+    try:
+        try:
+            timeout = float(os.environ.get('PDF_PARSE_TIMEOUT_SECONDS', '20'))
+        except ValueError as error:
+            raise PdfParseLimit('Invalid PDF timeout configuration') from error
+        if not 0 < timeout <= 300:
+            raise PdfParseLimit('Invalid PDF timeout configuration')
+        process = subprocess.Popen(
+            [sys.executable, str(Path(__file__).with_name('pdf_worker.py').resolve())],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        )
+        try:
+            output, _ = process.communicate(file_content, timeout=timeout)
+        except subprocess.TimeoutExpired as error:
+            process.kill()
+            process.communicate()
+            raise PdfParseLimit('PDF parsing exceeded time limit') from error
+        if process.returncode or len(output) > 310_000:
+            raise PdfParseLimit('PDF parsing exceeded resource limits')
+        try:
+            result = json.loads(output)
+        except (ValueError, UnicodeDecodeError) as error:
+            raise PdfParseLimit('PDF parser returned invalid output') from error
+        if result.get('error'):
+            raise PdfParseLimit(result['error'])
+        return result['text'][:50_000]
+    finally:
+        if process is not None:
+            if process.poll() is None:
+                process.kill()
+                process.communicate()
+            for stream in (process.stdin, process.stdout):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except BrokenPipeError:
+                        pass
+        _PDF_PARSE_SLOTS.release()
 
 
 def parse_txt(file_content: bytes) -> str:

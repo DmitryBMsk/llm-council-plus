@@ -1,9 +1,12 @@
 """Ollama API client for making LLM requests."""
 
 import logging
+import asyncio
 import httpx
 from typing import List, Dict, Any, Union, TypedDict, Literal
 from . import config
+from .usage import record_usage
+from .run_context import ensure_run_active
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +18,7 @@ class SuccessResponse(TypedDict, total=False):
     """Successful response from Ollama."""
     content: str
     reasoning_details: Any
+    usage: Dict[str, int]
 
 
 class ErrorResponse(TypedDict):
@@ -62,6 +66,9 @@ async def query_model(
     if temperature is not None:
         payload["options"] = {"temperature": temperature}
 
+    await ensure_run_active()
+    attempt_usage = None
+    outcome = 'error'
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
@@ -73,11 +80,26 @@ async def query_model(
             data = response.json()
             message = data['message']
 
-            return {
+            result = {
                 'content': message.get('content'),
                 'reasoning_details': None  # Ollama API doesn't provide this
             }
+            usage = {}
+            for source, target in [('prompt_eval_count', 'prompt_tokens'), ('eval_count', 'completion_tokens')]:
+                value = data.get(source)
+                if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                    usage[target] = value
+            if 'prompt_tokens' in usage and 'completion_tokens' in usage:
+                usage['total_tokens'] = usage['prompt_tokens'] + usage['completion_tokens']
+            if usage:
+                result['usage'] = usage
+            attempt_usage = usage or None
+            outcome = 'success'
+            return result
 
+    except asyncio.CancelledError:
+        outcome = 'cancelled'
+        raise
     except httpx.ConnectError as e:
         logger.error("Connection error querying model %s: Cannot connect to Ollama at %s. Is Ollama running? Error: %s", model, config.OLLAMA_HOST, e)
         return {
@@ -113,6 +135,8 @@ async def query_model(
             'error_type': 'unknown',
             'error_message': str(e)
         }
+    finally:
+        record_usage('ollama', model, attempt_usage, outcome=outcome)
 
 
 async def query_models_parallel(

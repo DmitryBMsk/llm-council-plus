@@ -1,3 +1,4 @@
+# Direct generator tests isolate orchestration; admission is exercised via HTTP in test_run_admission_api.
 """Tests for streaming disconnect handling - partial results should be saved."""
 
 import asyncio
@@ -87,7 +88,7 @@ class TestStreamingDisconnect:
                 attachments = None
 
             # Get the streaming response
-            response = await send_message_stream(conversation_id, MockRequest())
+            response = await send_message_stream.__wrapped__(conversation_id, MockRequest())
 
             # Consume some events then simulate disconnect by closing generator
             generator = response.body_iterator
@@ -155,7 +156,7 @@ class TestStreamingDisconnect:
                 web_search = False
                 web_search_provider = None
 
-            response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+            response = await send_message_stream.__wrapped__(conversation_id, MockRequest(), current_user="guest")
             generator = response.body_iterator
             events = []
 
@@ -242,7 +243,7 @@ class TestStreamingDisconnect:
                 web_search = False
                 web_search_provider = None
 
-            response = await send_message_stream(conversation_id, MockRequest())
+            response = await send_message_stream.__wrapped__(conversation_id, MockRequest())
 
             # Consume all events (normal completion)
             async for chunk in response.body_iterator:
@@ -287,7 +288,7 @@ class TestStreamingDisconnect:
                 web_search = False
                 web_search_provider = None
 
-            response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+            response = await send_message_stream.__wrapped__(conversation_id, MockRequest(), current_user="guest")
             events = []
             async for chunk in response.body_iterator:
                 events.append(_parse_sse_event(chunk))
@@ -336,7 +337,7 @@ class TestStreamingDisconnect:
                 web_search = False
                 web_search_provider = None
 
-            response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+            response = await send_message_stream.__wrapped__(conversation_id, MockRequest(), current_user="guest")
             events = await _collect_sse_events(response)
 
         heartbeat_events = [
@@ -395,7 +396,7 @@ class TestStreamingDisconnect:
                 web_search = False
                 web_search_provider = None
 
-            response = await send_message_stream(conversation_id, MockRequest(), current_user="guest")
+            response = await send_message_stream.__wrapped__(conversation_id, MockRequest(), current_user="guest")
             events = await _collect_sse_events(response, timeout=1.0)
 
         assert closed is True

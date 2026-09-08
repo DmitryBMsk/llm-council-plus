@@ -360,7 +360,7 @@ export const api = {
    * @returns {Promise<void>}
    */
   async sendMessageStream(conversationId, content, onEvent, attachments = null, webSearchProvider = 'off', options = {}) {
-    const body = { content };
+    const body = { content, request_id: options?.requestId || crypto.randomUUID() };
     if (attachments && attachments.length > 0) {
       body.attachments = attachments;
     }
