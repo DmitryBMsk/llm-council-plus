@@ -4,6 +4,8 @@ import re
 import json
 import asyncio
 import logging
+from .search_results import bounded_query, search_output, tool_context, MAX_QUERY_CHARS
+
 import contextvars
 import threading
 from starlette.concurrency import run_in_threadpool
@@ -356,6 +358,7 @@ Given the user's question, generate the BEST possible web search query that will
 1. Find the most recent and up-to-date information
 2. Be specific enough to get relevant results
 3. Use effective search operators if helpful
+4. Use a single focused query of at most 300 characters; preserve the subject, dates and named entities.
 
 User's question: {user_query}
 
@@ -377,13 +380,20 @@ Respond with ONLY the search query, nothing else. No explanations, no quotes, ju
             # Remove any quotes if the model wrapped the query
             optimized_query = optimized_query.strip('"\'')
             logger.info("[WEB_SEARCH] Optimized query: %s", optimized_query[:100])
-            return optimized_query
+            return bounded_query(optimized_query) or bounded_query(user_query)
         else:
             logger.warning("[WEB_SEARCH] Chairman returned empty response, using original query")
-            return user_query
+            return bounded_query(user_query)
     except Exception as e:
         logger.error("[WEB_SEARCH] Failed to optimize query: %s", e)
-        return user_query
+        return bounded_query(user_query)
+
+
+async def collect_auto_tools(user_query, router_type=None):
+    if _has_search_signal(user_query) and len(user_query) > MAX_QUERY_CHARS:
+        optimized = await optimize_search_query(user_query, router_type=router_type)
+        return await asyncio.to_thread(run_tools_for_query, user_query, search_query=optimized)
+    return await asyncio.to_thread(run_tools_for_query, user_query)
 
 
 def run_tavily_direct(query: str, provider: str = None) -> List[Dict[str, str]]:
@@ -414,25 +424,17 @@ def run_tavily_direct(query: str, provider: str = None) -> List[Dict[str, str]]:
 
     if not search_tool:
         logger.warning("[WEB_SEARCH] No search tool available for provider=%s", provider or "auto")
-        return []
+        return [{"tool": f"{provider or 'web'}_search", "status": "error", "result": "", "error": {"code": "unavailable", "message": "Search provider is not configured."}}]
 
     tool_name = search_tool.name
     try:
         logger.info("[WEB_SEARCH] Executing %s search (provider=%s): %s", tool_name, provider or "auto", query[:100])
         output = search_tool.invoke(query)
         if output:
-            try:
-                output_str = json.dumps(output, ensure_ascii=False)
-            except (TypeError, ValueError):
-                output_str = str(output)
-
-            if len(output_str) > 24000:
-                output_str = output_str[:24000] + "..."
-
-            logger.info("[WEB_SEARCH] %s returned %d chars", tool_name, len(output_str))
-            return [{"tool": tool_name, "result": output_str}]
+            return [search_output(tool_name, output)]
     except Exception as e:
-        logger.error("[WEB_SEARCH] %s search failed: %s", tool_name, e)
+        logger.error("[WEB_SEARCH] %s search failed: %s", tool_name, type(e).__name__)
+        return [{"tool": tool_name, "status": "error", "result": "", "error": {"code": "provider_error", "message": "Search provider failed."}}]
 
     return []
 
@@ -541,7 +543,7 @@ def run_stock_for_tickers(stock_tool, tickers: List[str], limit: int) -> List[Di
     return results
 
 
-def run_tools_for_query(query: str, limit: int = 3) -> List[Dict[str, str]]:
+def run_tools_for_query(query: str, limit: int = 3, search_query: str = None) -> List[Dict[str, str]]:
     """Run available tools against the query to enrich context."""
     results: List[Dict[str, str]] = []
     tools = get_available_tools()
@@ -592,16 +594,12 @@ def run_tools_for_query(query: str, limit: int = 3) -> List[Dict[str, str]]:
         search_tool = tavily_tool or exa_tool or web_tool
         try:
             logger.debug("[TOOLS] Calling %s...", search_tool.name)
-            output = search_tool.invoke(query)
+            output = search_tool.invoke(search_query or query)
             if output:
-                output_str = safe_serialize(output)
-                logger.debug("[TOOLS] %s returned %d chars", search_tool.name, len(output_str))
-                if len(output_str) > 24000:
-                    output_str = output_str[:24000] + "..."
-                results.append({"tool": search_tool.name, "result": output_str})
-                return results  # Search output is comprehensive, no need for other search tools
+                return [search_output(search_tool.name, output)]
         except Exception as e:
-            logger.warning("[TOOLS] %s error: %s", search_tool.name, e)
+            logger.warning("[TOOLS] %s error: %s", search_tool.name, type(e).__name__)
+            return [{"tool": search_tool.name, "status": "error", "result": "", "error": {"code": "provider_error", "message": "Search provider failed."}}]
 
     for tool in tools:
         if tool.name == "stock_data":
@@ -661,16 +659,10 @@ async def stage1_collect_responses(
     logger.debug("[STAGE1] requires_tools(%s...): %s", user_query[:30], requires_tools(user_query))
     if requires_tools(user_query):
         # Tool calls (Tavily/Exa/DDG/Wikipedia/yfinance) are sync HTTP; keep them off the event loop.
-        tool_outputs = await asyncio.to_thread(run_tools_for_query, user_query)
+        tool_outputs = await collect_auto_tools(user_query, router_type=router_type)
         logger.debug("[STAGE1] tool_outputs: %d results", len(tool_outputs))
         if tool_outputs:
-            tool_text = """IMPORTANT: Use the following real-time search results to answer the user's question.
-This data is current and should be used as the primary source for your response.
-
-Search Results:
-""" + "\n".join(
-                f"- {item['tool']}: {item['result']}" for item in tool_outputs
-            )
+            tool_text = tool_context(tool_outputs)
             messages.insert(0, {"role": "system", "content": tool_text})
 
     # Add memory context if enabled (Feature 4)
@@ -801,17 +793,11 @@ async def stage1_collect_responses_streaming(
     # Regular tool detection (Feature 4)
     elif requires_tools(user_query):
         logger.debug("[STAGE1-STREAM] requires_tools(%s...): %s", user_query[:30], requires_tools(user_query))
-        tool_outputs = await asyncio.to_thread(run_tools_for_query, user_query)
+        tool_outputs = await collect_auto_tools(user_query, router_type=router_type)
         logger.debug("[STAGE1-STREAM] tool_outputs: %d results", len(tool_outputs))
 
     if tool_outputs:
-        tool_text = """IMPORTANT: Use the following real-time search results to answer the user's question.
-This data is current and should be used as the primary source for your response.
-
-Search Results:
-""" + "\n".join(
-            f"- {item['tool']}: {item['result']}" for item in tool_outputs
-        )
+        tool_text = tool_context(tool_outputs)
         messages.insert(0, {"role": "system", "content": tool_text})
         logger.info("[STAGE1-STREAM] Injected search context: %d chars", len(tool_text))
         logger.debug("[STAGE1-STREAM] Search context preview: %s...", tool_text[:500])
@@ -1107,9 +1093,7 @@ async def stage3_synthesize_final(
     # Add tool outputs if available
     tools_text = ""
     if tool_outputs:
-        tools_text = "\n\nTOOL OUTPUTS:\n" + "\n".join(
-            f"- {t.get('tool')}: {t.get('result')}" for t in tool_outputs
-        )
+        tools_text = "\n\n" + tool_context(tool_outputs)
 
     settings = runtime_settings.get_runtime_settings()
     if has_rankings:

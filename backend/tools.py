@@ -49,11 +49,7 @@ except ImportError:  # pragma: no cover
 
 # Note: PythonREPLTool removed for security - using safe AST-based calculator instead
 
-# Optional: Tavily (paid, flag + key)
-try:
-    from langchain_community.tools.tavily_search import TavilySearchResults
-except Exception:  # pragma: no cover
-    TavilySearchResults = None
+from .search_results import tavily_search
 
 # Optional: Exa (paid, flag + key)
 try:
@@ -280,18 +276,9 @@ def yahoo_finance_tool() -> Tool:
 
 def tavily_tool(api_key: str) -> Tool:
     """Tavily search (paid, requires key + flag)."""
-    if TavilySearchResults is None:
-        raise RuntimeError("Tavily not installed; ensure langchain_community is available.")
-
-    search = TavilySearchResults(
-        api_key=api_key,
-        max_results=3,
-        search_depth="advanced",
-        include_answer=True,
-    )
     return Tool(
         name="tavily_search",
-        func=search.invoke,
+        func=lambda query: tavily_search(query, api_key),
         description="Advanced web search (paid) for richer current-event answers.",
     )
 
