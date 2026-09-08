@@ -59,6 +59,7 @@ export default function SettingsModal({ isOpen, onClose }) {
   const [success, setSuccess] = useState('');
   const [original, setOriginal] = useState(null);
   const [draft, setDraft] = useState(null);
+  const [canEdit, setCanEdit] = useState(false);
   const fileInputRef = useRef(null);
 
   const hasChanges = useMemo(() => {
@@ -72,6 +73,7 @@ export default function SettingsModal({ isOpen, onClose }) {
     setSuccess('');
     try {
       const settings = await api.getRuntimeSettings();
+      setCanEdit(settings.can_edit === true);
       setOriginal(settings);
       setDraft(settings);
     } catch (e) {
@@ -183,6 +185,8 @@ export default function SettingsModal({ isOpen, onClose }) {
           </button>
         </div>
 
+        {!isLoading && !canEdit && <p role="status" className="settings-hint">Only administrators can change global settings. You can view and export them.</p>}
+
         <div className="settings-tabs">
           <button
             className={`settings-tab ${activeTab === 'prompts' ? 'active' : ''}`}
@@ -219,7 +223,7 @@ export default function SettingsModal({ isOpen, onClose }) {
               <div className="settings-field">
                 <label>Stage 1 Prompt Template</label>
                 <div className="settings-hint">Available placeholders: {'{user_query}'}, {'{full_query}'}</div>
-                <textarea
+                <textarea disabled={!canEdit || isSaving}
                   value={draft.stage1_prompt_template || ''}
                   onChange={(e) => setDraft((p) => ({ ...p, stage1_prompt_template: e.target.value }))}
                   rows={6}
@@ -228,7 +232,7 @@ export default function SettingsModal({ isOpen, onClose }) {
               <div className="settings-field">
                 <label>Stage 2 Prompt Template</label>
                 <div className="settings-hint">Available placeholders: {'{user_query}'}, {'{responses_text}'}</div>
-                <textarea
+                <textarea disabled={!canEdit || isSaving}
                   value={draft.stage2_prompt_template || ''}
                   onChange={(e) => setDraft((p) => ({ ...p, stage2_prompt_template: e.target.value }))}
                   rows={10}
@@ -239,7 +243,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                 <div className="settings-hint">
                   Available placeholders: {'{user_query}'}, {'{stage1_text}'}, {'{stage2_text}'}, {'{rankings_block}'}, {'{tools_text}'}
                 </div>
-                <textarea
+                <textarea disabled={!canEdit || isSaving}
                   value={draft.stage3_prompt_template || ''}
                   onChange={(e) => setDraft((p) => ({ ...p, stage3_prompt_template: e.target.value }))}
                   rows={10}
@@ -252,7 +256,7 @@ export default function SettingsModal({ isOpen, onClose }) {
             <div className="settings-section">
               <div className="settings-field">
                 <label>Council Temperature: <span className="settings-value">{Number(draft.council_temperature).toFixed(2)}</span></label>
-                <input
+                <input disabled={!canEdit || isSaving}
                   type="range"
                   min="0"
                   max="2"
@@ -263,7 +267,7 @@ export default function SettingsModal({ isOpen, onClose }) {
               </div>
               <div className="settings-field">
                 <label>Stage 2 Temperature: <span className="settings-value">{Number(draft.stage2_temperature).toFixed(2)}</span></label>
-                <input
+                <input disabled={!canEdit || isSaving}
                   type="range"
                   min="0"
                   max="2"
@@ -274,7 +278,7 @@ export default function SettingsModal({ isOpen, onClose }) {
               </div>
               <div className="settings-field">
                 <label>Chairman Temperature: <span className="settings-value">{Number(draft.chairman_temperature).toFixed(2)}</span></label>
-                <input
+                <input disabled={!canEdit || isSaving}
                   type="range"
                   min="0"
                   max="2"
@@ -293,7 +297,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                 <div className="settings-hint">
                   Provider selection and fetch limits are stored here. API keys are not stored or exported.
                 </div>
-                <select
+                <select disabled={!canEdit || isSaving}
                   value={draft.web_search_provider || 'duckduckgo'}
                   onChange={(e) => setDraft((p) => ({ ...p, web_search_provider: e.target.value }))}
                   className="settings-select"
@@ -308,7 +312,7 @@ export default function SettingsModal({ isOpen, onClose }) {
 
               <div className="settings-field">
                 <label>Max Results: <span className="settings-value">{Number(draft.web_max_results ?? 5)}</span></label>
-                <input
+                <input disabled={!canEdit || isSaving}
                   type="range"
                   min="1"
                   max="10"
@@ -325,7 +329,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                 <div className="settings-hint">
                   Fetch full content for top N results when using DuckDuckGo/Brave. Set 0 to disable.
                 </div>
-                <input
+                <input disabled={!canEdit || isSaving}
                   type="range"
                   min="0"
                   max="10"
@@ -344,8 +348,8 @@ export default function SettingsModal({ isOpen, onClose }) {
               </p>
               <div className="settings-actions-row">
                 <button className="settings-btn" onClick={handleExport}>Export JSON</button>
-                <button className="settings-btn" onClick={handleImportClick}>Import JSON</button>
-                <input
+                <button className="settings-btn" onClick={handleImportClick} disabled={!canEdit || isSaving}>Import JSON</button>
+                <input disabled={!canEdit || isSaving}
                   ref={fileInputRef}
                   type="file"
                   accept="application/json"
@@ -354,7 +358,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                 />
               </div>
               <div className="settings-divider" />
-              <button className="settings-btn danger" onClick={handleReset}>
+              <button className="settings-btn danger" onClick={handleReset} disabled={!canEdit || isSaving}>
                 Reset to Defaults
               </button>
             </div>
@@ -370,7 +374,7 @@ export default function SettingsModal({ isOpen, onClose }) {
             <button className="settings-btn secondary" onClick={load} disabled={isLoading || isSaving}>
               Reload
             </button>
-            <button className="settings-btn primary" onClick={handleSave} disabled={!hasChanges || isSaving || isLoading}>
+            <button className="settings-btn primary" onClick={handleSave} disabled={!canEdit || !hasChanges || isSaving || isLoading}>
               {isSaving ? 'Saving…' : (hasChanges ? 'Save' : 'Saved')}
             </button>
           </div>

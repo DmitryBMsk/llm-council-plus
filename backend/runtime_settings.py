@@ -148,3 +148,33 @@ def reset_runtime_settings() -> RuntimeSettings:
     settings = default_runtime_settings()
     save_runtime_settings(settings)
     return settings
+
+
+def mutate_runtime_settings(patch: dict[str, Any], *, actor: str, action: str) -> RuntimeSettings:
+    """Serialize API mutations and persist an audit trail with no setting values.
+
+    Audit metadata shares the atomic settings replacement: a successful write
+    cannot publish a settings version without recording its actor. Readers and
+    exports ignore the private _audit key. The stable lock also protects against
+    competing workers using the temporary settings file.
+    """
+    from .storage import _conversation_lock
+    from datetime import datetime, timezone
+
+    if action not in {"patch", "import", "reset"}:
+        raise ValueError("Unknown settings action")
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with _conversation_lock(str(SETTINGS_FILE)):
+        raw = _read_json_file(SETTINGS_FILE) or {}
+        base = get_runtime_settings() if action == "patch" else default_runtime_settings()
+        settings = RuntimeSettings(**{**base.model_dump(), **patch})
+        audit = raw.get("_audit", [])
+        audit.append({
+            "version": len(audit) + 1,
+            "actor": actor,
+            "action": action,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "fields": sorted(patch) if action == "patch" else sorted(RuntimeSettings.model_fields),
+        })
+        _atomic_write_json(SETTINGS_FILE, {**settings.model_dump(), "_audit": audit})
+        return settings

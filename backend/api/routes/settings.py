@@ -2,16 +2,13 @@
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from typing import Dict, Any, Optional
+from typing import Optional
 
-from ..deps import get_current_user
+from ..deps import get_current_user, require_settings_admin, can_edit_global_settings
 from ...runtime_settings import (
-    RuntimeSettings,
     get_runtime_settings,
-    update_runtime_settings,
-    reset_runtime_settings,
     default_runtime_settings,
-    save_runtime_settings,
+    mutate_runtime_settings,
 )
 
 router = APIRouter(tags=["settings"])
@@ -36,17 +33,17 @@ class UpdateRuntimeSettingsRequest(BaseModel):
 @router.get("/api/settings")
 async def get_settings_endpoint(current_user: str = Depends(get_current_user)):
     """Get runtime settings (prompt templates + temperatures)."""
-    return get_runtime_settings().model_dump()
+    return {**get_runtime_settings().model_dump(), "can_edit": can_edit_global_settings(current_user)}
 
 
 @router.patch("/api/settings")
 async def update_settings_endpoint(
     request: UpdateRuntimeSettingsRequest,
-    current_user: str = Depends(get_current_user),
+    current_user: str = Depends(require_settings_admin),
 ):
     """Patch runtime settings (non-secret)."""
     patch = {k: v for k, v in request.model_dump().items() if v is not None}
-    updated = update_runtime_settings(**patch) if patch else get_runtime_settings()
+    updated = mutate_runtime_settings(patch, actor=current_user, action="patch") if patch else get_runtime_settings()
     return updated.model_dump()
 
 
@@ -57,9 +54,9 @@ async def get_settings_defaults_endpoint(current_user: str = Depends(get_current
 
 
 @router.post("/api/settings/reset")
-async def reset_settings_endpoint(current_user: str = Depends(get_current_user)):
+async def reset_settings_endpoint(current_user: str = Depends(require_settings_admin)):
     """Reset runtime settings to defaults."""
-    return reset_runtime_settings().model_dump()
+    return mutate_runtime_settings({}, actor=current_user, action="reset").model_dump()
 
 
 @router.get("/api/settings/export")
@@ -70,13 +67,9 @@ async def export_settings_endpoint(current_user: str = Depends(get_current_user)
 
 @router.post("/api/settings/import")
 async def import_settings_endpoint(
-    request: Dict[str, Any],
-    current_user: str = Depends(get_current_user),
+    request: UpdateRuntimeSettingsRequest,
+    current_user: str = Depends(require_settings_admin),
 ):
     """Import runtime settings from JSON (API keys are never part of this schema)."""
-    # Defense in depth: accept any JSON object but persist only the RuntimeSettings allowlist.
-    allowed = set(RuntimeSettings.model_fields.keys())
-    sanitized = {k: v for k, v in (request or {}).items() if k in allowed}
-    settings = RuntimeSettings(**sanitized)
-    save_runtime_settings(settings)
-    return settings.model_dump()
+    sanitized = {k: v for k, v in request.model_dump().items() if v is not None}
+    return mutate_runtime_settings(sanitized, actor=current_user, action="import").model_dump()

@@ -75,3 +75,18 @@ def _ownership_username(current_user: str) -> Optional[str]:
     if not config.AUTH_ENABLED:
         return None
     return current_user
+
+
+def can_edit_global_settings(username: str) -> bool:
+    """Local shared mode is writable; authenticated mode requires an explicit admin."""
+    import os
+
+    admins = {name.strip() for name in os.getenv("AUTH_ADMIN_USERS", "").split(",") if name.strip()}
+    return not config.AUTH_ENABLED or username in admins
+
+
+async def require_settings_admin(current_user: str = Depends(get_current_user)) -> str:
+    """Protect every global settings mutation independently of the UI."""
+    if not can_edit_global_settings(current_user):
+        raise HTTPException(status_code=403, detail="Only administrators can change global settings")
+    return current_user
