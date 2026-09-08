@@ -29,6 +29,9 @@ jobs:
       - name: Lint (ruff)
         run: .venv/bin/ruff check backend/
 
+      - name: Check API contract
+        run: .venv/bin/python tools/check_api_contract.py
+
       - name: Tests (pytest)
         run: .venv/bin/python -m pytest -q
 
@@ -50,6 +53,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Dependency security
+        run: npm audit --audit-level=high
+
       - name: Lint (eslint)
         run: npm run lint
 
@@ -58,3 +64,80 @@ jobs:
 
       - name: Tests (vitest)
         run: npm run test
+
+  browser-e2e:
+    name: Browser E2E (local provider)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: uv sync --frozen --no-install-project
+      - run: npm ci --prefix frontend
+      - name: Install browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Run browser regressions and real local stack
+        working-directory: frontend
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-e2e-report
+          path: |
+            output/e2e-report
+            output/e2e-results
+          retention-days: 7
+
+  sql-concurrency:
+    name: SQL concurrency (${{ matrix.database }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - database: postgres
+            url: postgresql+psycopg2://council:council@127.0.0.1:5432/council_test
+          - database: mysql
+            url: mysql+pymysql://council:council@127.0.0.1:3306/council_test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: council
+          POSTGRES_PASSWORD: council
+          POSTGRES_DB: council_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U council -d council_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root-test-only
+          MYSQL_DATABASE: council_test
+          MYSQL_USER: council
+          MYSQL_PASSWORD: council
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -proot-test-only"
+          --health-interval 5s --health-timeout 5s --health-retries 24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --frozen --no-install-project --extra database
+      - name: Concurrent SQL updates against real database
+        env:
+          PYTHON_DOTENV_DISABLED: "1"
+          SQL_TEST_URL: ${{ matrix.url }}
+        run: .venv/bin/python -m pytest backend/tests/test_sql_atomic_updates.py backend/tests/test_sql_http_e2e.py -q
