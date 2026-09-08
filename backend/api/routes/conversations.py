@@ -1,16 +1,19 @@
 """Conversation endpoints — /api/conversations/*, /api/upload."""
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse, Response
 from starlette.concurrency import run_in_threadpool
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import List, Dict, Any, Optional, Tuple
+import base64
+import binascii
 import uuid
 import json
 import asyncio
 import time
 import logging
 
+from ... import attachments as attachment_store
 from ... import storage
 from ... import config
 from ...council import (
@@ -27,6 +30,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["conversations"])
 STAGE1_HEARTBEAT_INTERVAL = 15
+MIB = 1024 * 1024
+MAX_FILE_UPLOAD_SIZE = 10 * MIB
+MAX_IMAGE_UPLOAD_SIZE = 20 * MIB
+MAX_TOTAL_ATTACHMENT_SIZE = 20 * MIB
+MAX_TEXT_ATTACHMENT_LENGTH = 5_000_000
+# The supported image data-URI prefixes are short, but leave a small bounded
+# allowance so validation can report the decoded-byte limit consistently.
+MAX_ATTACHMENT_CONTENT_LENGTH = 128 + 4 * ((MAX_IMAGE_UPLOAD_SIZE + 2) // 3)
+
 
 
 async def _next_stage1_item(stage1_stream):
@@ -46,9 +58,41 @@ class CreateConversationRequest(BaseModel):
 class FileAttachment(BaseModel):
     """File attachment with parsed content."""
     filename: str = Field(max_length=255, pattern=r'^[^/\\<>:"|?*\x00-\x1f]+$')  # Safe filename
-    file_type: str = Field(max_length=20)  # 'pdf', 'txt', 'md', or 'image'
-    content: str = Field(max_length=5_000_000)  # 5MB limit per file (base64)
+    file_type: str = Field(max_length=20, pattern="^(pdf|txt|text|md|mdx|image)$")  # 'pdf', 'txt', 'md', or 'image'
+    content: str = Field(max_length=MAX_ATTACHMENT_CONTENT_LENGTH)
     mime_type: Optional[str] = Field(default=None, max_length=100)
+    byte_size: Optional[int] = Field(default=None, ge=0, le=MAX_IMAGE_UPLOAD_SIZE)
+
+    @model_validator(mode='after')
+    def validate_content_size(self):
+        """Validate image limits in raw bytes, not expanded base64 characters."""
+        if self.file_type != 'image':
+            if len(self.content) > MAX_TEXT_ATTACHMENT_LENGTH:
+                raise ValueError(
+                    f"Text attachment content exceeds limit ({MAX_TEXT_ATTACHMENT_LENGTH} characters)"
+                )
+            return self
+
+        header, separator, encoded = self.content.partition(',')
+        if not separator or not header.startswith('data:image/') or not header.endswith(';base64'):
+            raise ValueError("Image content must be a base64 data URI")
+
+        if header[5:].split(';')[0] not in attachment_store.IMAGE_MIME_TYPES:
+            raise ValueError("Unsupported image MIME type")
+        try:
+            decoded_size = len(base64.b64decode(encoded, validate=True))
+        except (binascii.Error, UnicodeEncodeError, ValueError) as exc:
+            raise ValueError("Image content contains invalid base64 data") from exc
+
+        if decoded_size > MAX_IMAGE_UPLOAD_SIZE:
+            raise ValueError("Image attachment exceeds limit (20MB)")
+        if self.byte_size is not None and self.byte_size != decoded_size:
+            raise ValueError("Image byte_size does not match decoded content")
+
+        # Preserve a trustworthy raw size for aggregate validation and response
+        # round-trips. The value is derived above rather than trusted from JSON.
+        self.byte_size = decoded_size
+        return self
 
 
 class SendMessageRequest(BaseModel):
@@ -65,10 +109,16 @@ class SendMessageRequest(BaseModel):
         """Validate total size of all attachments (max 20MB total)."""
         if v is None:
             return v
-        total_size = sum(len(att.content) for att in v)
-        max_total_size = 20_000_000  # 20MB total
-        if total_size > max_total_size:
-            raise ValueError(f"Total attachment size ({total_size / 1_000_000:.1f}MB) exceeds limit (20MB)")
+        total_size = sum(
+            (att.byte_size or 0)
+            if att.file_type == 'image'
+            else len(att.content.encode('utf-8'))
+            for att in v
+        )
+        if total_size > MAX_TOTAL_ATTACHMENT_SIZE:
+            raise ValueError(
+                f"Total attachment size ({total_size / MIB:.1f}MB) exceeds limit (20MB)"
+            )
         return v
 
 
@@ -154,6 +204,44 @@ The user has attached the following file(s) for analysis:
 {attachments_section}
 
 Please analyze the attached content in the context of the user's question."""
+
+
+async def resolve_images(conversation, images, router_type):
+    if images and router_type == 'ollama':
+        raise HTTPException(status_code=400, detail='Ollama images are not supported. Select OpenRouter or remove image attachments.')
+    if images or not conversation:
+        return images
+    try:
+        reused = await run_in_threadpool(attachment_store.latest_images, conversation)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail='Saved image unavailable; reattach it before continuing.') from exc
+    if reused and router_type == 'ollama':
+        raise HTTPException(status_code=400, detail='Ollama images are not supported. Use an OpenRouter conversation for this image history.')
+    return reused
+
+
+@router.get('/api/conversations/{conversation_id}/attachments/{attachment_id}')
+async def download_attachment(conversation_id: str, attachment_id: str, current_user: str = Depends(get_current_user)):
+    if not storage.validate_conversation_id(conversation_id):
+        raise HTTPException(status_code=404, detail='Attachment not found')
+    conversation = await run_in_threadpool(storage.get_conversation, conversation_id, username=_ownership_username(current_user))
+    attachment = attachment_store.find_attachment(conversation, attachment_id) if conversation else None
+    if not attachment:
+        raise HTTPException(status_code=404, detail='Attachment not found')
+    if attachment['file_type'] == 'image':
+        try:
+            path = await run_in_threadpool(attachment_store.image_path, conversation_id, attachment_id)
+            if not await run_in_threadpool(path.is_file):
+                raise ValueError('Missing attachment')
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail='Attachment not found') from exc
+        return FileResponse(path, media_type=attachment['mime_type'], filename=attachment['filename'])
+    # Original PDF bytes are not available; this is explicitly an extracted-text download.
+    from urllib.parse import quote
+    filename = attachment['filename'] + '.extracted.txt'
+    return Response(attachment.get('content', '').encode('utf-8'), media_type='text/plain',
+                    headers={'Content-Disposition': "attachment; filename*=UTF-8''" + quote(filename),
+                             'X-Content-Type-Options': 'nosniff'})
 
 
 @router.get("/api/conversations", response_model=List[ConversationMetadata])
@@ -278,24 +366,25 @@ async def upload_file(
         )
 
     try:
-        # Read file content
-        file_content = await file.read()
+        # Bound application-level materialization before parsing. Reading one
+        # byte beyond the selected cap distinguishes exact-limit files from
+        # oversized files without copying the remainder into this bytes object.
+        image_upload = is_image_file(filename)
+        max_upload_size = MAX_IMAGE_UPLOAD_SIZE if image_upload else MAX_FILE_UPLOAD_SIZE
+        file_content = await file.read(max_upload_size + 1)
 
         # Enforce size limits BEFORE parsing. PDFs especially can be small on
         # disk yet expand to gigabytes of memory while rendering (a "PDF bomb"),
         # so the cap must run before parse_file(), not after.
-        max_image_size = 20 * 1024 * 1024  # 20MB
-        max_file_size = 20 * 1024 * 1024   # 20MB for PDF / text / markdown
-        if is_image_file(filename):
-            if len(file_content) > max_image_size:
+        if len(file_content) > max_upload_size:
+            if image_upload:
                 raise HTTPException(
                     status_code=400,
                     detail="Image file too large. Maximum size is 20MB."
                 )
-        elif len(file_content) > max_file_size:
             raise HTTPException(
                 status_code=400,
-                detail="File too large. Maximum size is 20MB."
+                detail="File too large. Maximum size is 10MB."
             )
 
         # Parse off the event loop: PDF parsing (pymupdf4llm) is CPU-bound and
@@ -355,6 +444,7 @@ async def send_message(
 
     # For temporary mode, skip conversation existence check and storage operations
     if request.temporary:
+        image_attachments = await resolve_images(None, image_attachments, config.ROUTER_TYPE)
         # Run the 3-stage council process without saving
         try:
             stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
@@ -392,11 +482,14 @@ async def send_message(
     if execution_mode not in {"chat_only", "chat_ranking", "full"}:
         execution_mode = "full"
 
+    image_attachments = await resolve_images(conversation, image_attachments, router_type)
+
     # Check if this is the first message
     is_first_message = len(conversation["messages"]) == 0
 
     # Add user message (store original content, not with attachments)
-    await run_in_threadpool(storage.add_user_message, conversation_id, request.content)
+    await run_in_threadpool(storage.add_user_message, conversation_id, request.content,
+                                    attachments=[a.model_dump() for a in request.attachments] if request.attachments else None)
 
     # If this is the first message, generate a title
     if is_first_message:
@@ -482,6 +575,8 @@ async def send_message_stream(
     if execution_mode not in {"chat_only", "chat_ranking", "full"}:
         execution_mode = "full"
 
+    image_attachments = await resolve_images(conversation, image_attachments, router_type)
+
     async def event_generator():
         # Initialize state variables OUTSIDE try block so finally can access them
         stage1_results = []
@@ -502,7 +597,8 @@ async def send_message_stream(
             reset_token_stats()
 
             # Add user message (store original content, not with attachments)
-            await run_in_threadpool(storage.add_user_message, conversation_id, request.content)
+            await run_in_threadpool(storage.add_user_message, conversation_id, request.content,
+                                    attachments=[a.model_dump() for a in request.attachments] if request.attachments else None)
 
             # Start title generation in parallel (don't await yet)
             if is_first_message:

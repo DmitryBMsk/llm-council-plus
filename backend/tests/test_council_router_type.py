@@ -64,18 +64,14 @@ async def test_stage1_streaming_uses_router_type(monkeypatch):
     assert called["router_type"] == "openrouter"
 
 
-def test_build_multimodal_messages_ollama_ignores_images():
+def test_build_multimodal_messages_ollama_rejects_images():
     from .. import council
 
-    messages = council.build_multimodal_messages(
-        "describe this",
-        images=[{"content": "data:image/png;base64,AAA", "filename": "x.png"}],
-        conversation_history=[],
-        router_type="ollama",
-    )
-
-    assert messages[0]["role"] == "user"
-    assert messages[0]["content"] == "describe this"
+    with pytest.raises(ValueError, match='Ollama'):
+        council.build_multimodal_messages(
+            'hello', images=[{'content': 'data:image/png;base64,AAA', 'filename': 'x.png'}],
+            router_type='ollama',
+        )
 
 
 @pytest.mark.asyncio

@@ -39,9 +39,9 @@ def build_message_content(
     if rt == "openrouter":
         return openrouter.build_message_content(text, images)
 
-    # Ollama router: ignore images (text only).
+    # Fail closed: never silently discard image inputs for the text-only adapter.
     if images:
-        logger.warning("Ignoring %d image(s) for Ollama router.", len(images))
+        raise ValueError("Ollama images are not supported. Select OpenRouter or remove image attachments.")
     return text
 
 

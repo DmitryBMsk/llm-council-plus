@@ -153,7 +153,13 @@ def build_context_prompt(conversation_history: List[Dict[str, Any]], user_query:
     context_parts = []
     for msg in recent:
         if msg.get('role') == 'user':
-            context_parts.append(f"User: {msg.get('content', '')}")
+            text = f"User: {msg.get('content', '')}"
+            for attachment in msg.get('attachments', []):
+                if attachment.get('file_type') != 'image':
+                    text += f"\nFile: {attachment.get('filename', 'document')} (stored extracted text)\n{attachment.get('content', '')}"
+                else:
+                    text += f"\n[Attached image: {attachment.get('filename', 'image')}; only the most recent image batch is resent]"
+            context_parts.append(text)
         elif msg.get('role') == 'assistant':
             final = msg.get('stage3') or {}
             if final.get('response') and not final.get('error'):

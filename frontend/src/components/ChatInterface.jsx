@@ -14,7 +14,7 @@ import './ChatInterface.css';
 
 // File size limits (in bytes)
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB for regular files
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB for images
+const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB for images
 
 function formatFileSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -160,9 +160,32 @@ export default function ChatInterface({
     }
   };
 
+  const rejectUnsupportedImages = (files) => {
+    if (conversation?.router_type === 'ollama' && files.some(file =>
+      file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp)$/i.test(file.name))) {
+      addToast('Ollama images are not supported. Select OpenRouter or attach a text document.', 'warning');
+      return true;
+    }
+    return false;
+  };
+
+  const downloadAttachment = async (attachment) => {
+    try {
+      const blob = await api.downloadAttachment(conversation.id, attachment);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = attachment.file_type === 'image' ? attachment.filename : `${attachment.filename}.extracted.txt`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      addToast(error.message, 'error');
+    }
+  };
+
   const handleFileSelect = async (e) => {
     const files = Array.from(e.target.files);
-    if (files.length === 0) return;
+    if (files.length === 0 || rejectUnsupportedImages(files)) return;
 
     // Validate file sizes before uploading
     const invalidFiles = [];
@@ -235,7 +258,7 @@ export default function ChatInterface({
     if (isLoading || isUploading) return;
 
     const files = Array.from(e.dataTransfer.files);
-    if (files.length === 0) return;
+    if (files.length === 0 || rejectUnsupportedImages(files)) return;
 
     // Filter to supported file types
     const supportedExtensions = ['.pdf', '.txt', '.md', '.mdx', '.jpg', '.jpeg', '.png', '.gif', '.webp'];
@@ -336,6 +359,19 @@ export default function ChatInterface({
                     <div className="markdown-content">
                       <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{msg.content}</ReactMarkdown>
                     </div>
+                    {msg.attachments?.length > 0 && (
+                      <div className="saved-attachments">
+                        {msg.attachments.map((attachment, attachmentIndex) => (
+                          <div key={attachment.id || attachmentIndex}>
+                            <span>{attachment.filename}</span>{' '}
+                            {attachment.id && <button type="button" onClick={() => downloadAttachment(attachment)}>
+                              {attachment.file_type === 'image' ? 'Download image' : 'Download extracted text'}
+                            </button>}
+                            {attachment.file_type === 'image' && <small> Most recent image batch is reused for follow-up questions.</small>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (

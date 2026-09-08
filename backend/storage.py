@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Generator, Callable
 from pathlib import Path
 from . import config
+from .attachments import persist_attachments, delete_attachments
 from .database import is_using_database, SessionLocal
 from .models import Conversation as ConversationModel
 from sqlalchemy import text
@@ -607,7 +608,7 @@ def list_conversations(*, username: Optional[str] = None) -> List[Dict[str, Any]
     return [c for c in all_convs if _owner_matches(c.get("username"), username)]
 
 
-def add_user_message(conversation_id: str, content: str):
+def add_user_message(conversation_id: str, content: str, attachments=None):
     """
     Add a user message to a conversation.
 
@@ -616,7 +617,10 @@ def add_user_message(conversation_id: str, content: str):
         content: User message content
     """
     def _update(conv: Dict[str, Any]) -> None:
-        conv.setdefault("messages", []).append({"role": "user", "content": content})
+        message = {"role": "user", "content": content}
+        if attachments:
+            message["attachments"] = persist_attachments(conversation_id, attachments)
+        conv.setdefault("messages", []).append(message)
     if is_using_database():
         _db_update_conversation(conversation_id, _update)
     else:
@@ -701,9 +705,12 @@ def delete_conversation(conversation_id: str, *, username: Optional[str] = None)
         return False
 
     if is_using_database():
-        return _db_delete_conversation(conversation_id)
-
-    return _json_delete_conversation(conversation_id)
+        deleted = _db_delete_conversation(conversation_id)
+    else:
+        deleted = _json_delete_conversation(conversation_id)
+    if deleted:
+        delete_attachments(conversation_id)
+    return deleted
 
 
 def delete_all_conversations(*, username: Optional[str] = None):
@@ -712,18 +719,6 @@ def delete_all_conversations(*, username: Optional[str] = None):
     When username="guest", also deletes ownerless (legacy) conversations.
     When username=None, deletes everything (backwards-compat).
     """
-    if username is None:
-        if is_using_database():
-            _db_delete_all_conversations()
-        else:
-            _json_delete_all_conversations()
-        return
-
-    # User-scoped deletion: list owned conversations and delete each.
     owned = list_conversations(username=username)
     for conv_meta in owned:
-        # Use unscoped delete since we already verified ownership via list.
-        if is_using_database():
-            _db_delete_conversation(conv_meta["id"])
-        else:
-            _json_delete_conversation(conv_meta["id"])
+        delete_conversation(conv_meta["id"], username=username)

@@ -285,7 +285,8 @@ export const api = {
       }
     );
     if (!response.ok) {
-      throw new Error('Failed to send message');
+      const error = typeof response.json === 'function' ? await response.json().catch(() => ({})) : {};
+      throw new Error(typeof error.detail === 'string' ? error.detail : 'Failed to send message');
     }
     return response.json();
   },
@@ -342,6 +343,12 @@ export const api = {
     return response.json();
   },
 
+  async downloadAttachment(conversationId, attachment) {
+    const response = await authFetch(`${API_BASE}/api/conversations/${encodeURIComponent(conversationId)}/attachments/${encodeURIComponent(attachment.id)}`);
+    if (!response.ok) throw new Error('Unable to download attachment');
+    return response.blob();
+  },
+
   /**
    * Send a message and receive streaming updates. Requires authentication.
    * @param {string} conversationId - The conversation ID
@@ -374,7 +381,8 @@ export const api = {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to send message');
+      const error = typeof response.json === 'function' ? await response.json().catch(() => ({})) : {};
+      throw new Error(typeof error.detail === 'string' ? error.detail : 'Failed to send message');
     }
 
     if (!response.body) throw new Error('Stream response has no body');

@@ -306,7 +306,7 @@ function App() {
 
     try {
       // Optimistically add user message to UI
-      const userMessage = { role: 'user', content };
+      const userMessage = { role: 'user', content, ...(attachments?.length ? { attachments } : {}) };
       setCurrentConversation((prev) => ({
         ...prev,
         messages: [...prev.messages, userMessage],
@@ -584,6 +584,7 @@ function App() {
           case 'complete': {
             finishStream(currentConversationId);
             loadConversations();
+            if (attachments?.length && currentConversationIdRef.current === currentConversationId) loadConversation(currentConversationId);
             break;
           }
 

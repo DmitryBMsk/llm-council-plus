@@ -68,15 +68,14 @@ def test_dispatch_build_message_content_openrouter(monkeypatch):
     assert content == [{"type": "text", "text": "hello"}]
 
 
-def test_dispatch_build_message_content_ollama_ignores_images():
+def test_dispatch_build_message_content_ollama_rejects_images():
     from .. import router_dispatch
 
-    content = router_dispatch.build_message_content(
-        "ollama",
-        text="hello",
-        images=[{"content": "data:image/png;base64,AAA", "filename": "x.png"}],
-    )
-    assert content == "hello"
+    with pytest.raises(ValueError, match='Ollama'):
+        router_dispatch.build_message_content(
+            'ollama', text='hello',
+            images=[{'content': 'data:image/png;base64,AAA', 'filename': 'x.png'}],
+        )
 
 
 def test_dispatch_rejects_unknown_router_type():
