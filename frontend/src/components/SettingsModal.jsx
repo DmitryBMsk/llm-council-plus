@@ -1,3 +1,5 @@
+import GenerationSettings from './GenerationSettings';
+import { validateGenerationSettings } from '../utils/generationSettings';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import PropTypes from 'prop-types';
 import { api } from '../api';
@@ -22,6 +24,8 @@ function downloadJson(filename, obj) {
 }
 
 const RUNTIME_SETTINGS_KEYS = [
+  'generation_limits',
+  'model_generation_limits',
   'stage1_prompt_template',
   'stage2_prompt_template',
   'stage3_prompt_template',
@@ -60,6 +64,7 @@ export default function SettingsModal({ isOpen, onClose }) {
   const [original, setOriginal] = useState(null);
   const [draft, setDraft] = useState(null);
   const [canEdit, setCanEdit] = useState(false);
+  const [generationValid, setGenerationValid] = useState(true);
   const fileInputRef = useRef(null);
 
   const hasChanges = useMemo(() => {
@@ -76,6 +81,7 @@ export default function SettingsModal({ isOpen, onClose }) {
       setCanEdit(settings.can_edit === true);
       setOriginal(settings);
       setDraft(settings);
+      setGenerationValid(true);
     } catch (e) {
       setError(e.message || 'Failed to load settings');
     } finally {
@@ -93,11 +99,12 @@ export default function SettingsModal({ isOpen, onClose }) {
   }, [isOpen]);
 
   const handleSave = async () => {
-    if (!draft || !hasChanges) return;
+    if (!draft || !hasChanges || !canEdit || !generationValid) return;
     setIsSaving(true);
     setError('');
     setSuccess('');
     try {
+      validateGenerationSettings(draft.generation_limits, draft.model_generation_limits);
       const patch = {};
       for (const [k, v] of Object.entries(draft)) {
         if (!original || original[k] !== v) {
@@ -107,6 +114,7 @@ export default function SettingsModal({ isOpen, onClose }) {
       const updated = await api.updateRuntimeSettings(patch);
       setOriginal(updated);
       setDraft(updated);
+      setGenerationValid(true);
       setSuccess('Saved!');
       setTimeout(() => setSuccess(''), 1500);
     } catch (e) {
@@ -125,6 +133,7 @@ export default function SettingsModal({ isOpen, onClose }) {
       const updated = await api.resetRuntimeSettings();
       setOriginal(updated);
       setDraft(updated);
+      setGenerationValid(true);
       setSuccess('Reset to defaults');
       setTimeout(() => setSuccess(''), 1500);
     } catch (e) {
@@ -161,9 +170,11 @@ export default function SettingsModal({ isOpen, onClose }) {
       if (droppedKeys.length) {
         setSuccess(`Imported (ignored ${droppedKeys.length} unsupported keys)`);
       }
+      validateGenerationSettings(sanitized.generation_limits, sanitized.model_generation_limits);
       const updated = await api.importRuntimeSettings(sanitized);
       setOriginal(updated);
       setDraft(updated);
+      setGenerationValid(true);
       if (!droppedKeys.length) setSuccess('Imported');
       setTimeout(() => setSuccess(''), 1500);
     } catch (err) {
@@ -188,6 +199,7 @@ export default function SettingsModal({ isOpen, onClose }) {
         {!isLoading && !canEdit && <p role="status" className="settings-hint">Only administrators can change global settings. You can view and export them.</p>}
 
         <div className="settings-tabs">
+          <button className={`settings-tab ${activeTab === 'generation' ? 'active' : ''}`} onClick={() => setActiveTab('generation')}>Generation limits</button>
           <button
             className={`settings-tab ${activeTab === 'prompts' ? 'active' : ''}`}
             onClick={() => setActiveTab('prompts')}
@@ -217,6 +229,8 @@ export default function SettingsModal({ isOpen, onClose }) {
         <div className="settings-modal-body">
           {isLoading && <div className="settings-loading">Loading…</div>}
           {!isLoading && !draft && <div className="settings-loading">No settings loaded</div>}
+
+          {!isLoading && draft && <div hidden={activeTab !== 'generation'}><GenerationSettings key={JSON.stringify(original)} draft={draft} onChange={setDraft} disabled={!canEdit || isSaving} onValidityChange={setGenerationValid} /></div>}
 
           {!isLoading && draft && activeTab === 'prompts' && (
             <div className="settings-section">
@@ -374,7 +388,7 @@ export default function SettingsModal({ isOpen, onClose }) {
             <button className="settings-btn secondary" onClick={load} disabled={isLoading || isSaving}>
               Reload
             </button>
-            <button className="settings-btn primary" onClick={handleSave} disabled={!canEdit || !hasChanges || isSaving || isLoading}>
+            <button className="settings-btn primary" onClick={handleSave} disabled={!canEdit || !hasChanges || !generationValid || isSaving || isLoading}>
               {isSaving ? 'Saving…' : (hasChanges ? 'Save' : 'Saved')}
             </button>
           </div>
