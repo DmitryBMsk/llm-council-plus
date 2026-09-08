@@ -10,7 +10,8 @@ from typing import List, Dict, Any, Tuple, Optional
 from .toon_encoder import (
     encode_for_llm,
     get_savings_stats,
-    aggregate_token_stats
+    aggregate_token_stats,
+    count_tokens,
 )
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,7 @@ from . import router_dispatch
 # Conversation-history window sent to council models (see build_context_prompt)
 MAX_CONTEXT_MESSAGES = 12   # last 6 user/assistant exchanges
 MAX_CONTEXT_CHARS = 24_000  # total character budget for the history block
+MAX_CONTEXT_TOKENS = 6_000  # cl100k estimate; provider tokenizers may differ
 
 # Stage 3 chairman fallback limits (see stage3_synthesize_final)
 MAX_CHAIRMAN_FALLBACKS = 2       # cap the sequential fallback chain
@@ -136,9 +138,19 @@ def build_context_prompt(conversation_history: List[Dict[str, Any]], user_query:
         if msg.get('role') == 'user':
             context_parts.append(f"User: {msg.get('content', '')}")
         elif msg.get('role') == 'assistant':
-            # Include only the final answer from stage3 for context
-            if msg.get('stage3') and msg['stage3'].get('response'):
-                context_parts.append(f"Council Answer: {msg['stage3']['response']}")
+            final = msg.get('stage3') or {}
+            if final.get('response') and not final.get('error'):
+                context_parts.append(f"Council Answer: {final['response']}")
+            else:
+                # Partial modes have no synthesis. Preserve each successful
+                # answer with attribution rather than silently dropping it.
+                answers = [
+                    f"{result.get('model', 'Council member')}: {result['response']}"
+                    for result in (msg.get('stage1') or [])
+                    if result.get('response') and not result.get('error')
+                ]
+                if answers:
+                    context_parts.append("Council Answers:\n" + "\n\n".join(answers))
 
     if not context_parts:
         return user_query
@@ -152,9 +164,19 @@ def build_context_prompt(conversation_history: List[Dict[str, Any]], user_query:
         context_parts[0] = context_parts[0][-MAX_CONTEXT_CHARS:]
         truncated = True
 
+    # Keep the existing character cap as a cheap first bound, then budget
+    # multilingual/history-heavy content using the project's tokenizer.
+    marker = "[earlier context omitted]\n\n"
+    token_budget = MAX_CONTEXT_TOKENS - count_tokens(marker)
+    while len(context_parts) > 1 and count_tokens("\n\n".join(context_parts)) > token_budget:
+        context_parts.pop(0)
+        truncated = True
     context = "\n\n".join(context_parts)
+    while context and count_tokens(context) > token_budget:
+        context = context[max(1, len(context) // 10):]
+        truncated = True
     if truncated:
-        context = "[earlier context omitted]\n\n" + context
+        context = marker + context
     return f"""Previous conversation:
 {context}
 
@@ -579,6 +601,7 @@ async def stage1_collect_responses(
     images: Optional[List[Dict[str, str]]] = None,
     conversation_id: Optional[str] = None,
     router_type: Optional[str] = None,
+    system_prompt: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
     """
     Stage 1: Collect individual responses from all council models.
@@ -589,6 +612,7 @@ async def stage1_collect_responses(
         models: Optional list of model IDs to use (defaults to COUNCIL_MODELS)
         images: Optional list of image attachments for multimodal queries
         conversation_id: Optional conversation ID for memory system
+        system_prompt: Optional custom system prompt for the conversation
 
     Returns:
         Tuple of (stage1_results, tool_outputs)
@@ -623,6 +647,11 @@ Search Results:
                 messages.insert(0, {"role": "system", "content": f"Relevant past exchanges:\n{memory_ctx}"})
         except Exception as e:
             logger.warning("Memory context retrieval failed: %s", e)
+
+    # Inject custom system prompt as the first and highest-priority message.
+    if system_prompt:
+        messages.insert(0, {"role": "system", "content": system_prompt})
+        logger.info("[STAGE1] Custom system prompt injected (%d chars)", len(system_prompt))
 
     # Use provided models or fall back to default
     council_models = models if models else config.COUNCIL_MODELS
@@ -1272,7 +1301,12 @@ async def run_full_council(
     user_query: str,
     conversation_history: List[Dict[str, Any]] = None,
     images: Optional[List[Dict[str, str]]] = None,
-    conversation_id: Optional[str] = None
+    conversation_id: Optional[str] = None,
+    models: Optional[List[str]] = None,
+    chairman: Optional[str] = None,
+    router_type: Optional[str] = None,
+    system_prompt: Optional[str] = None,
+    execution_mode: str = "full",
 ) -> Tuple[List, List, Dict, Dict]:
     """
     Run the complete 3-stage council process.
@@ -1282,6 +1316,11 @@ async def run_full_council(
         conversation_history: Optional list of previous messages for context
         images: Optional list of image attachments for multimodal queries
         conversation_id: Optional conversation ID for memory system
+        models: Optional conversation-specific council model IDs
+        chairman: Optional conversation-specific chairman model ID
+        router_type: Optional conversation-specific router
+        system_prompt: Optional conversation-specific system prompt
+        execution_mode: Stages to run (`chat_only`, `chat_ranking`, or `full`)
 
     Returns:
         Tuple of (stage1_results, stage2_results, stage3_result, metadata)
@@ -1293,29 +1332,58 @@ async def run_full_council(
     stage1_results, tool_outputs = await stage1_collect_responses(
         user_query,
         conversation_history,
+        models=models,
         images=images,
-        conversation_id=conversation_id
+        conversation_id=conversation_id,
+        router_type=router_type,
+        system_prompt=system_prompt,
     )
 
-    # If no models responded successfully, return error
-    if not stage1_results:
+    if execution_mode == "chat_only":
+        metadata = {
+            "execution_mode": execution_mode,
+            "tool_outputs": tool_outputs,
+            "token_stats": get_token_stats(),
+        }
+        return stage1_results, None, None, metadata
+
+    # Partial modes preserve their stage boundary even if Stage 1 is empty.
+    # Full mode keeps the legacy synthesized error payload.
+    if not stage1_results and execution_mode not in {"chat_only", "chat_ranking"}:
         return [], [], {
             "model": "error",
             "response": "All models failed to respond. Please try again."
         }, {}
 
     # Stage 2: Collect rankings
-    stage2_results, label_to_model = await stage2_collect_rankings(user_query, stage1_results)
+    stage2_results, label_to_model = await stage2_collect_rankings(
+        user_query,
+        stage1_results,
+        models=models,
+        router_type=router_type,
+    )
 
     # Calculate aggregate rankings
     aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+
+    if execution_mode == "chat_ranking":
+        metadata = {
+            "execution_mode": execution_mode,
+            "label_to_model": label_to_model,
+            "aggregate_rankings": aggregate_rankings,
+            "tool_outputs": tool_outputs,
+            "token_stats": get_token_stats(),
+        }
+        return stage1_results, stage2_results, None, metadata
 
     # Stage 3: Synthesize final answer (now includes tool_outputs)
     stage3_result = await stage3_synthesize_final(
         user_query,
         stage1_results,
         stage2_results,
-        tool_outputs=tool_outputs
+        chairman=chairman,
+        tool_outputs=tool_outputs,
+        router_type=router_type,
     )
 
     # Save exchange to memory if enabled (Feature 4)

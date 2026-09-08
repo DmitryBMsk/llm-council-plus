@@ -95,6 +95,8 @@ class Conversation(BaseModel):
     chairman: Optional[str] = None
     username: Optional[str] = None
     execution_mode: Optional[str] = None
+    router_type: Optional[str] = None
+    system_prompt: Optional[str] = None
 
 
 def separate_attachments(attachments: Optional[List[FileAttachment]]) -> Tuple[List[FileAttachment], List[Dict[str, str]]]:
@@ -379,6 +381,16 @@ async def send_message(
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    conv_models = conversation.get("models")
+    conv_chairman = conversation.get("chairman")
+    conv_system_prompt = conversation.get("system_prompt")
+    execution_mode = (conversation.get("execution_mode") or "full").strip().lower()
+    router_type = (conversation.get("router_type") or config.ROUTER_TYPE or "openrouter").strip().lower()
+    if router_type not in {"openrouter", "ollama"}:
+        router_type = config.ROUTER_TYPE
+    if execution_mode not in {"chat_only", "chat_ranking", "full"}:
+        execution_mode = "full"
+
     # Check if this is the first message
     is_first_message = len(conversation["messages"]) == 0
 
@@ -387,7 +399,7 @@ async def send_message(
 
     # If this is the first message, generate a title
     if is_first_message:
-        title = await generate_conversation_title(request.content)
+        title = await generate_conversation_title(request.content, router_type=router_type)
         storage.update_conversation_title(conversation_id, title, username=ownership)
 
     # Get conversation history for context (exclude the just-added user message)
@@ -400,7 +412,12 @@ async def send_message(
             full_query,
             conversation_history,
             images=images_for_council,
-            conversation_id=conversation_id  # For memory system
+            conversation_id=conversation_id,  # For memory system
+            models=conv_models,
+            chairman=conv_chairman,
+            router_type=router_type,
+            system_prompt=conv_system_prompt,
+            execution_mode=execution_mode,
         )
     except ValueError as e:
         # Translate configuration errors (e.g., no council models) to 400
