@@ -377,53 +377,55 @@ export const api = {
       throw new Error('Failed to send message');
     }
 
+    if (!response.body) throw new Error('Stream response has no body');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-
-        // Keep the last incomplete line in the buffer
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            try {
-              const event = JSON.parse(data);
-              onEvent(event.type, event);
-            } catch (e) {
-              console.error('Failed to parse SSE event:', e);
-            }
-          }
-        }
+    let dataLines = [];
+    let terminal = false;
+    const dispatch = () => {
+      if (!dataLines.length) return;
+      let event;
+      try {
+        event = JSON.parse(dataLines.join('\n'));
+      } catch {
+        throw new Error('Invalid SSE event');
       }
-
-      // Process any remaining data in buffer
-      if (buffer.startsWith('data: ')) {
-        const data = buffer.slice(6);
-        try {
-          const event = JSON.parse(data);
-          onEvent(event.type, event);
-        } catch {
-          // Ignore incomplete final chunk
+      dataLines = [];
+      if (!event || typeof event.type !== 'string') throw new Error('Invalid SSE event');
+      // Consumer exceptions must reach the caller's cleanup handler too.
+      onEvent(event.type, event);
+      terminal = event.type === 'complete' || event.type === 'error';
+    };
+    const processLine = (line) => {
+      line = line.replace(/\r$/, '');
+      if (!line) dispatch();
+      else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''));
+    };
+    try {
+      while (!terminal) {
+        const { done, value } = await reader.read();
+        buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          processLine(line);
+          if (terminal) break;
         }
+        if (done && !terminal) {
+          if (buffer) processLine(buffer);
+          dispatch();
+          if (!terminal) throw new Error('Stream ended before completion. Partial results are retained; refresh to check saved progress.');
+        }
+        if (done) break;
       }
     } finally {
-      // Always release the underlying connection. cancel() also releases the
-      // lock; swallow any error because by this point we're either done or
-      // the consumer aborted and we just want to free the socket.
       try {
         await reader.cancel();
       } catch {
-        // ignore
+        // Preserve the original transport/consumer error during cleanup.
       }
+      reader.releaseLock?.();
     }
   },
 

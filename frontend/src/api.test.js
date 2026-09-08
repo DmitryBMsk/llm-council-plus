@@ -161,7 +161,7 @@ describe('api.sendMessageStream', () => {
     // Split a single SSE message across two chunks
     const chunks = [
       'data: {"type":"sta',
-      'ge1_start","timestamp":1}\n\n',
+      'ge1_start","timestamp":1}\n\ndata: {"type":"complete"}\n\n',
     ]
 
     fetch.mockResolvedValueOnce({
@@ -174,7 +174,7 @@ describe('api.sendMessageStream', () => {
       events.push({ type, event })
     })
 
-    expect(events).toHaveLength(1)
+    expect(events).toHaveLength(2)
     expect(events[0].type).toBe('stage1_start')
   })
 
@@ -231,3 +231,36 @@ describe('401 handling', () => {
     expect(reloadMock).toHaveBeenCalled()
   })
 })
+
+describe('SSE terminal contract', () => {
+  it.each(['', 'data: {"type":"stage1_start"}\n\n', 'data: {"type":"stage1_complete","data":[] }\n\n'])('rejects premature EOF: %s', async payload => {
+    fetch.mockResolvedValue({ ok: true, body: makeReadableStream([payload]) });
+    await expect(api.sendMessageStream('a', 'q', vi.fn())).rejects.toThrow('Stream ended before completion');
+  });
+  it('propagates consumer errors rather than swallowing them as JSON errors', async () => {
+    fetch.mockResolvedValue({ ok: true, body: makeReadableStream(['data: {"type":"complete"}\n\n']) });
+    await expect(api.sendMessageStream('a', 'q', () => { throw new Error('consumer broke'); })).rejects.toThrow('consumer broke');
+  });
+  it('rejects malformed events', async () => {
+    fetch.mockResolvedValue({ ok: true, body: makeReadableStream(['data: not-json\n\n']) });
+    await expect(api.sendMessageStream('a', 'q', vi.fn())).rejects.toThrow('Invalid SSE event');
+  });
+  it('stops reading once terminal event arrives even if server keeps connection open', async () => {
+    const cancel = vi.fn();
+    const read = vi.fn().mockResolvedValueOnce({ value: new TextEncoder().encode('data: {"type":"error","message":"failed"}\n\n'), done: false }).mockImplementation(() => { throw new Error('read past terminal'); });
+    fetch.mockResolvedValue({ ok: true, body: { getReader: () => ({ read, cancel }) } });
+    const onEvent = vi.fn();
+    await api.sendMessageStream('a', 'q', onEvent);
+    expect(onEvent).toHaveBeenCalledWith('error', { type: 'error', message: 'failed' });
+    expect(cancel).toHaveBeenCalled();
+  });
+});
+
+it('parses CRLF, heartbeats and multiline data across chunk boundaries', async () => {
+  fetch.mockResolvedValue({ ok: true, body: makeReadableStream([
+    ': heartbeat\r\n\r\ndata: {"type":\r', '\ndata: "complete"}\r\n\r\n',
+  ]) });
+  const onEvent = vi.fn();
+  await api.sendMessageStream('a', 'q', onEvent);
+  expect(onEvent).toHaveBeenCalledExactlyOnceWith('complete', { type: 'complete' });
+});

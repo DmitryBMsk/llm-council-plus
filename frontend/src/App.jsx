@@ -265,6 +265,33 @@ function App() {
     }
   };
 
+  const finishStream = (conversationId, metadata = null) => {
+    const stored = streamingStateRef.current.get(conversationId);
+    if (stored) {
+      const messages = stored.messages.map((message, index) => {
+        if (index !== stored.messages.length - 1 || message.role !== 'assistant') return message;
+        return {
+          ...message,
+          metadata: { ...message.metadata, ...metadata },
+          loading: { stage1: false, stage2: false, stage3: false },
+        };
+      });
+      // Retain interrupted results across navigation; a reload fetches durable
+      // server progress. Never silently retry a possibly accepted paid request.
+      if (metadata) streamingStateRef.current.set(conversationId, { messages, isLoading: false });
+      else streamingStateRef.current.delete(conversationId);
+      if (currentConversationIdRef.current === conversationId) {
+        setCurrentConversation(previous => previous?.id === conversationId ? { ...previous, messages } : previous);
+      }
+    }
+    if (activeStreamingConvIdRef.current === conversationId) {
+      activeStreamingConvIdRef.current = null;
+      streamAbortControllerRef.current = null;
+      streamAbortRequestedRef.current = false;
+      setIsLoading(false);
+    }
+  };
+
   const handleSendMessage = async (content, attachments = null, webSearchProvider = 'off') => {
     if (!currentConversationId || currentConversationId !== currentConversationIdRef.current
       || currentConversation?.id !== currentConversationId || activeStreamingConvIdRef.current) return;
@@ -555,43 +582,15 @@ function App() {
           }
 
           case 'complete': {
-            // Stream complete, clear streaming state
-            const streamingConvId = activeStreamingConvIdRef.current;
-            if (streamingConvId) {
-              streamingStateRef.current.delete(streamingConvId);
-            }
-            activeStreamingConvIdRef.current = null;
-            streamAbortControllerRef.current = null;
-            // Reload conversations list
+            finishStream(currentConversationId);
             loadConversations();
-            setIsLoading(false);
             break;
           }
 
           case 'error': {
-            console.error('Stream error:', event.message);
-            addToast(`Stream error: ${event.message || 'Unknown error'}`, 'error');
-            updateStreamingState((prev) => {
-              const lastIdx = prev.messages.length - 1;
-              const lastMsg = prev.messages[lastIdx];
-              if (!lastMsg || lastMsg.role !== 'assistant') return prev;
-              const currentMetadata = lastMsg.metadata || {};
-              const currentLoading = lastMsg.loading || {};
-              const newLastMsg = {
-                ...lastMsg,
-                metadata: { ...currentMetadata, error: true },
-                loading: { ...currentLoading, stage1: false, stage2: false, stage3: false },
-              };
-              return { ...prev, messages: [...prev.messages.slice(0, -1), newLastMsg] };
-            });
-            // Clear streaming state on error
-            const streamingConvId = activeStreamingConvIdRef.current;
-            if (streamingConvId) {
-              streamingStateRef.current.delete(streamingConvId);
-            }
-            activeStreamingConvIdRef.current = null;
-            streamAbortControllerRef.current = null;
-            setIsLoading(false);
+            const message = event.message || 'Unknown error';
+            addToast(`Stream error: ${message}`, 'error');
+            finishStream(currentConversationId, { error: true, error_message: message });
             break;
           }
 
@@ -600,64 +599,13 @@ function App() {
         }
       }, attachments, webSearchProvider, { signal: streamAbortControllerRef.current.signal });
     } catch (error) {
-      // Handle user-initiated abort (Stop button)
-      if (error?.name === 'AbortError' || streamAbortRequestedRef.current) {
-        addToast('Cancelled', 'warning', 2500);
-        updateStreamingState((prev) => {
-          const lastIdx = prev.messages.length - 1;
-          const lastMsg = prev.messages[lastIdx];
-          if (!lastMsg || lastMsg.role !== 'assistant') return prev;
-          const currentMetadata = lastMsg.metadata || {};
-          const currentLoading = lastMsg.loading || {};
-          const newLastMsg = {
-            ...lastMsg,
-            metadata: { ...currentMetadata, aborted: true },
-            loading: { ...currentLoading, stage1: false, stage2: false, stage3: false },
-          };
-          return { ...prev, messages: [...prev.messages.slice(0, -1), newLastMsg] };
-        });
-        // Clear streaming state
-        const streamingConvId = activeStreamingConvIdRef.current;
-        if (streamingConvId) {
-          streamingStateRef.current.delete(streamingConvId);
-        }
-        activeStreamingConvIdRef.current = null;
-        streamAbortControllerRef.current = null;
-        streamAbortRequestedRef.current = false;
-        setIsLoading(false);
-        // Reload conversation list (server may have saved partial)
-        setTimeout(loadConversations, 400);
-        return;
-      }
-
-      console.error('Failed to send message:', error);
-      updateStreamingState((prev) => {
-        const lastIdx = prev.messages.length - 1;
-        const lastMsg = prev.messages[lastIdx];
-        if (!lastMsg || lastMsg.role !== 'assistant') return prev;
-        const currentMetadata = lastMsg.metadata || {};
-        const currentLoading = lastMsg.loading || {};
-        const newLastMsg = {
-          ...lastMsg,
-          metadata: { ...currentMetadata, error: true },
-          loading: { ...currentLoading, stage1: false, stage2: false, stage3: false },
-        };
-        return { ...prev, messages: [...prev.messages.slice(0, -1), newLastMsg] };
-      });
-      // Remove optimistic messages on error
-      const streamingConvId = activeStreamingConvIdRef.current;
-      if (currentConversationIdRef.current === streamingConvId) {
-        setCurrentConversation((prev) => (
-          prev ? { ...prev, messages: prev.messages.slice(0, -2) } : prev
-        ));
-      }
-      if (streamingConvId) {
-        streamingStateRef.current.delete(streamingConvId);
-      }
-      activeStreamingConvIdRef.current = null;
-      streamAbortControllerRef.current = null;
-      setIsLoading(false);
-      addToast(`Stream failed: ${error?.message || 'Unknown error'}`, 'error');
+      const aborted = error?.name === 'AbortError' || streamAbortRequestedRef.current;
+      finishStream(currentConversationId, aborted
+        ? { aborted: true }
+        : { error: true, error_message: error?.message || 'Unknown error' });
+      addToast(aborted ? 'Cancelled' : `Stream failed: ${error?.message || 'Unknown error'}`,
+        aborted ? 'warning' : 'error', aborted ? 2500 : 6000);
+      loadConversations();
     }
   };
 

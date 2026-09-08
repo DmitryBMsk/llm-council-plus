@@ -342,6 +342,13 @@ export default function ChatInterface({
                 <div className="assistant-message">
                   <div className="message-label">LLM Council Plus</div>
 
+                  {(msg.metadata?.error || msg.metadata?.aborted) && (
+                    <div role="status" className="stream-status">
+                      {msg.metadata.aborted ? 'Request cancelled.' : 'Response interrupted.'}
+                      {' Partial results are shown. Refresh to check saved progress before sending again.'}
+                    </div>
+                  )}
+
                   <SearchContext toolOutputs={msg.metadata?.tool_outputs || msg.tool_outputs} />
 
                   {/* Stage 1 */}

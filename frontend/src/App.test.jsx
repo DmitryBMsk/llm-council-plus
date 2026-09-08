@@ -237,7 +237,7 @@ describe('App streaming state isolation', () => {
     await selectConversation('Conversation A', 'conv-a');
 
     expect(screen.getByTestId('loading')).toHaveTextContent('false');
-    expect(screen.getByTestId('message-count')).toHaveTextContent('1');
+    expect(screen.getByTestId('message-count')).toHaveTextContent('3');
   });
 
   it('marks the assistant message errored and clears stage loading on SSE error events', async () => {
@@ -292,4 +292,41 @@ describe('conversation selection races', () => {
     await act(async () => finishA(cloneConversation('conv-a')));
     expect(screen.getByTestId('current-id')).toHaveTextContent('conv-b');
   });
+});
+
+describe('interrupted responses', () => {
+  it('preserves partial response after transport failure and navigation', async () => {
+    const stream = setupPendingStream();
+    await renderReadyApp();
+    await selectConversation('Conversation A', 'conv-a');
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await act(async () => {
+      stream.emit('stage1_start', { type: 'stage1_start' });
+      stream.emit('stage1_model_response', { data: { model: 'a', response: 'Partial answer' } });
+      stream.reject(new Error('Stream ended before completion'));
+    });
+    expect(screen.getByTestId('message-count')).toHaveTextContent('3');
+    expect(JSON.parse(screen.getByTestId('assistant-loading').textContent)).toEqual({ stage1: false, stage2: false, stage3: false });
+    await selectConversation('Conversation B', 'conv-b');
+    await selectConversation('Conversation A', 'conv-a');
+    expect(screen.getByTestId('message-count')).toHaveTextContent('3');
+    expect(screen.getByTestId('loading')).toHaveTextContent('false');
+  });
+});
+
+it('retains a cancelled response and releases input across navigation', async () => {
+  const stream = setupPendingStream();
+  await renderReadyApp();
+  await selectConversation('Conversation A', 'conv-a');
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  await act(async () => {
+    stream.emit('stage1_start');
+    stream.reject(new DOMException('Aborted', 'AbortError'));
+  });
+  expect(screen.getByTestId('message-count')).toHaveTextContent('3');
+  expect(screen.getByTestId('loading')).toHaveTextContent('false');
+  expect(JSON.parse(screen.getByTestId('assistant-metadata').textContent)).toMatchObject({ aborted: true });
+  await selectConversation('Conversation B', 'conv-b');
+  await selectConversation('Conversation A', 'conv-a');
+  expect(JSON.parse(screen.getByTestId('assistant-metadata').textContent)).toMatchObject({ aborted: true });
 });
