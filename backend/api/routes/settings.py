@@ -31,13 +31,13 @@ class UpdateRuntimeSettingsRequest(BaseModel):
 
 
 @router.get("/api/settings")
-async def get_settings_endpoint(current_user: str = Depends(get_current_user)):
+def get_settings_endpoint(current_user: str = Depends(get_current_user)):
     """Get runtime settings (prompt templates + temperatures)."""
     return {**get_runtime_settings().model_dump(), "can_edit": can_edit_global_settings(current_user)}
 
 
 @router.patch("/api/settings")
-async def update_settings_endpoint(
+def update_settings_endpoint(
     request: UpdateRuntimeSettingsRequest,
     current_user: str = Depends(require_settings_admin),
 ):
@@ -48,25 +48,25 @@ async def update_settings_endpoint(
 
 
 @router.get("/api/settings/defaults")
-async def get_settings_defaults_endpoint(current_user: str = Depends(get_current_user)):
+def get_settings_defaults_endpoint(current_user: str = Depends(get_current_user)):
     """Get default runtime settings."""
     return default_runtime_settings().model_dump()
 
 
 @router.post("/api/settings/reset")
-async def reset_settings_endpoint(current_user: str = Depends(require_settings_admin)):
+def reset_settings_endpoint(current_user: str = Depends(require_settings_admin)):
     """Reset runtime settings to defaults."""
     return mutate_runtime_settings({}, actor=current_user, action="reset").model_dump()
 
 
 @router.get("/api/settings/export")
-async def export_settings_endpoint(current_user: str = Depends(get_current_user)):
+def export_settings_endpoint(current_user: str = Depends(get_current_user)):
     """Export runtime settings as JSON (same shape as GET /api/settings)."""
     return get_runtime_settings().model_dump()
 
 
 @router.post("/api/settings/import")
-async def import_settings_endpoint(
+def import_settings_endpoint(
     request: UpdateRuntimeSettingsRequest,
     current_user: str = Depends(require_settings_admin),
 ):

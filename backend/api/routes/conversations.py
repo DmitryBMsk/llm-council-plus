@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Any, Optional, Tuple
 import uuid
@@ -191,7 +192,7 @@ async def create_conversation(
 
     conversation_id = str(uuid.uuid4())
     # Always use the authenticated identity — never trust client-supplied username
-    conversation = storage.create_conversation(
+    conversation = await run_in_threadpool(storage.create_conversation,
         conversation_id,
         models=request.models,
         chairman=request.chairman,
@@ -209,7 +210,7 @@ async def get_conversation(
     current_user: str = Depends(get_current_user)
 ):
     """Get a specific conversation with all its messages. Requires authentication."""
-    conversation = storage.get_conversation(conversation_id, username=_ownership_username(current_user))
+    conversation = await run_in_threadpool(storage.get_conversation, conversation_id, username=_ownership_username(current_user))
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return conversation
@@ -221,7 +222,7 @@ async def delete_conversation(
     current_user: str = Depends(get_current_user)
 ):
     """Delete a specific conversation. Requires authentication."""
-    if not storage.delete_conversation(conversation_id, username=_ownership_username(current_user)):
+    if not await run_in_threadpool(storage.delete_conversation, conversation_id, username=_ownership_username(current_user)):
         raise HTTPException(status_code=404, detail="Conversation not found")
     return {"status": "deleted", "id": conversation_id}
 
@@ -237,7 +238,7 @@ async def update_title(
     Works with all storage backends: JSON, PostgreSQL, MySQL.
     """
     try:
-        storage.update_conversation_title(conversation_id, request.title, username=_ownership_username(current_user))
+        await run_in_threadpool(storage.update_conversation_title, conversation_id, request.title, username=_ownership_username(current_user))
     except ValueError:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -251,7 +252,7 @@ async def update_title(
 @router.delete("/api/conversations")
 async def delete_all_conversations(current_user: str = Depends(get_current_user)):
     """Delete all conversations for the current user. Requires authentication."""
-    storage.delete_all_conversations(username=_ownership_username(current_user))
+    await run_in_threadpool(storage.delete_all_conversations, username=_ownership_username(current_user))
     return {"status": "deleted", "count": "all"}
 
 
@@ -377,7 +378,7 @@ async def send_message(
     # Normal mode: save to storage
     # Check if conversation exists and is owned by current user
     ownership = _ownership_username(current_user)
-    conversation = storage.get_conversation(conversation_id, username=ownership)
+    conversation = await run_in_threadpool(storage.get_conversation, conversation_id, username=ownership)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -395,12 +396,12 @@ async def send_message(
     is_first_message = len(conversation["messages"]) == 0
 
     # Add user message (store original content, not with attachments)
-    storage.add_user_message(conversation_id, request.content)
+    await run_in_threadpool(storage.add_user_message, conversation_id, request.content)
 
     # If this is the first message, generate a title
     if is_first_message:
         title = await generate_conversation_title(request.content, router_type=router_type)
-        storage.update_conversation_title(conversation_id, title, username=ownership)
+        await run_in_threadpool(storage.update_conversation_title, conversation_id, title, username=ownership)
 
     # Get conversation history for context (exclude the just-added user message)
     conversation_history = conversation["messages"]  # History before current question
@@ -424,7 +425,7 @@ async def send_message(
         raise HTTPException(status_code=400, detail=str(e))
 
     # Add assistant message with all stages and metadata
-    storage.add_assistant_message(
+    await run_in_threadpool(storage.add_assistant_message,
         conversation_id,
         stage1_results,
         stage2_results,
@@ -454,7 +455,7 @@ async def send_message_stream(
     """
     # Check if conversation exists and is owned by current user
     ownership = _ownership_username(current_user)
-    conversation = storage.get_conversation(conversation_id, username=ownership)
+    conversation = await run_in_threadpool(storage.get_conversation, conversation_id, username=ownership)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
@@ -501,7 +502,7 @@ async def send_message_stream(
             reset_token_stats()
 
             # Add user message (store original content, not with attachments)
-            storage.add_user_message(conversation_id, request.content)
+            await run_in_threadpool(storage.add_user_message, conversation_id, request.content)
 
             # Start title generation in parallel (don't await yet)
             if is_first_message:
@@ -601,7 +602,7 @@ async def send_message_stream(
                     "tool_outputs": tool_outputs,
                     "token_stats": token_stats,
                 }
-                storage.add_assistant_message(
+                await run_in_threadpool(storage.add_assistant_message,
                     conversation_id,
                     stage1_results,
                     None,
@@ -615,7 +616,7 @@ async def send_message_stream(
 
                 if title_task:
                     title = await title_task
-                    storage.update_conversation_title(conversation_id, title, username=ownership)
+                    await run_in_threadpool(storage.update_conversation_title, conversation_id, title, username=ownership)
                     yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
                 yield f"data: {json.dumps({'type': 'complete'})}\n\n"
@@ -668,7 +669,7 @@ async def send_message_stream(
                     "tool_outputs": tool_outputs,
                     "token_stats": token_stats,
                 }
-                storage.add_assistant_message(
+                await run_in_threadpool(storage.add_assistant_message,
                     conversation_id,
                     stage1_results,
                     stage2_results,
@@ -682,7 +683,7 @@ async def send_message_stream(
 
                 if title_task:
                     title = await title_task
-                    storage.update_conversation_title(conversation_id, title, username=ownership)
+                    await run_in_threadpool(storage.update_conversation_title, conversation_id, title, username=ownership)
                     yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
                 yield f"data: {json.dumps({'type': 'complete'})}\n\n"
@@ -725,7 +726,7 @@ async def send_message_stream(
             # This ensures the message is saved even if client disconnects during streaming
             # Previously, save was at the end of generator which never executed on disconnect
             metadata = {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings, 'tool_outputs': tool_outputs, 'token_stats': token_stats}
-            storage.add_assistant_message(
+            await run_in_threadpool(storage.add_assistant_message,
                 conversation_id,
                 stage1_results,
                 stage2_results,
@@ -743,7 +744,7 @@ async def send_message_stream(
             # Wait for title generation if it was started
             if title_task:
                 title = await title_task
-                storage.update_conversation_title(conversation_id, title, username=ownership)
+                await run_in_threadpool(storage.update_conversation_title, conversation_id, title, username=ownership)
                 yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
             # Send completion event
@@ -809,7 +810,7 @@ async def send_message_stream(
                     }
                 }
                 try:
-                    storage.add_assistant_message(
+                    await run_in_threadpool(storage.add_assistant_message,
                         conversation_id,
                         stage1_results,
                         stage2_results,

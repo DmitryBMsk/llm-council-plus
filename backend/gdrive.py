@@ -6,6 +6,7 @@ Google API dependencies are not installed.
 
 import os
 import io
+import threading
 from typing import Optional, Dict, Any
 
 try:  # pragma: no cover
@@ -23,8 +24,9 @@ from . import config
 # Scopes required for Google Drive file upload
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
-# Cached service instance
-_drive_service = None
+# Each worker owns its HTTP transport; googleapiclient transports are not
+# safe for simultaneous use by different threads.
+_drive_services = threading.local()
 
 
 def get_drive_service():
@@ -32,10 +34,9 @@ def get_drive_service():
     Get or create Google Drive service instance.
     Uses service account credentials.
     """
-    global _drive_service
-
-    if _drive_service is not None:
-        return _drive_service
+    service = getattr(_drive_services, "service", None)
+    if service is not None:
+        return service
 
     if not config.GOOGLE_DRIVE_ENABLED:
         raise ValueError("Google Drive is not configured. Set GOOGLE_DRIVE_FOLDER_ID in .env")
@@ -57,8 +58,9 @@ def get_drive_service():
         scopes=SCOPES
     )
 
-    _drive_service = build('drive', 'v3', credentials=credentials)
-    return _drive_service
+    service = build('drive', 'v3', credentials=credentials)
+    _drive_services.service = service
+    return service
 
 
 def upload_to_drive(

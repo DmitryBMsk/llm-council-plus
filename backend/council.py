@@ -5,6 +5,8 @@ import json
 import asyncio
 import logging
 import contextvars
+import threading
+from starlette.concurrency import run_in_threadpool
 from typing import List, Dict, Any, Tuple, Optional
 
 from .toon_encoder import (
@@ -101,6 +103,21 @@ from . import web_search as web_search_module
 from .memory import CouncilMemorySystem
 from . import runtime_settings
 from . import router_dispatch
+
+
+# Chroma and the shared embedding model are not assumed thread-safe. Keep
+# initialization, inference, and writes under one lock, inside worker threads.
+_memory_lock = threading.RLock()
+
+
+def _read_memory_context(conversation_id: str, query: str) -> str:
+    with _memory_lock:
+        return CouncilMemorySystem(conversation_id).get_context(query)
+
+
+def _save_memory_exchange(conversation_id: str, query: str, response: str) -> None:
+    with _memory_lock:
+        CouncilMemorySystem(conversation_id).save_exchange(query, response)
 
 
 # Conversation-history window sent to council models (see build_context_prompt)
@@ -641,8 +658,9 @@ Search Results:
     # Add memory context if enabled (Feature 4)
     if config.ENABLE_MEMORY and conversation_id:
         try:
-            memory = CouncilMemorySystem(conversation_id)
-            memory_ctx = memory.get_context(user_query)
+            memory_ctx = await run_in_threadpool(
+                _read_memory_context, conversation_id, user_query
+            )
             if memory_ctx:
                 messages.insert(0, {"role": "system", "content": f"Relevant past exchanges:\n{memory_ctx}"})
         except Exception as e:
@@ -781,8 +799,9 @@ Search Results:
     # Add memory context if enabled (Feature 4)
     if config.ENABLE_MEMORY and conversation_id:
         try:
-            memory = CouncilMemorySystem(conversation_id)
-            memory_ctx = memory.get_context(user_query)
+            memory_ctx = await run_in_threadpool(
+                _read_memory_context, conversation_id, user_query
+            )
             if memory_ctx:
                 messages.insert(0, {"role": "system", "content": f"Relevant past exchanges:\n{memory_ctx}"})
         except Exception as e:
@@ -1389,8 +1408,10 @@ async def run_full_council(
     # Save exchange to memory if enabled (Feature 4)
     if config.ENABLE_MEMORY and conversation_id:
         try:
-            memory = CouncilMemorySystem(conversation_id)
-            memory.save_exchange(user_query, stage3_result.get("response", ""))
+            await run_in_threadpool(
+                _save_memory_exchange, conversation_id, user_query,
+                stage3_result.get("response", ""),
+            )
         except Exception as e:
             logger.warning("Memory save failed: %s", e)
 

@@ -1,5 +1,6 @@
 """Authentication endpoints — /api/auth, /api/users, /api/auth/status."""
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPAuthorizationCredentials
 from typing import Optional
@@ -17,7 +18,7 @@ async def login(request: LoginRequest):
     Authenticate a user with username and password.
     Returns a token on success.
     """
-    result = authenticate(request.username, request.password)
+    result = await run_in_threadpool(authenticate, request.username, request.password)
 
     if not result.success:
         raise HTTPException(status_code=401, detail=result.error)

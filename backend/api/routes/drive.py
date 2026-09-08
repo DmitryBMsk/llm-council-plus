@@ -1,5 +1,6 @@
 """Google Drive endpoints — /api/drive/*."""
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
@@ -37,7 +38,8 @@ async def drive_upload(
         )
 
     try:
-        result = upload_to_drive(
+        result = await run_in_threadpool(
+            upload_to_drive,
             filename=request.filename,
             content=request.content,
             mime_type='text/markdown'

@@ -7,6 +7,7 @@ If not installed, memory is gracefully disabled.
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 
 # Try to import heavy dependencies - they are optional
@@ -20,8 +21,27 @@ except ImportError:
     Chroma = None
 
 
+_embeddings_lock = threading.Lock()
+_embeddings_initialized = False
+_embeddings = None
+
+
 def get_embeddings():
-    """Return embeddings implementation based on env flags."""
+    """Initialize the process-wide embedding model once, including cold races.
+
+    Embedding backend configuration is read once; changing it requires restart.
+    Council operations serialize use of this shared model in worker threads.
+    """
+    global _embeddings, _embeddings_initialized
+    with _embeddings_lock:
+        if not _embeddings_initialized:
+            _embeddings = _create_embeddings()
+            _embeddings_initialized = True
+        return _embeddings
+
+
+def _create_embeddings():
+    """Construct the configured optional embedding backend."""
     if not _MEMORY_AVAILABLE:
         return None
 
