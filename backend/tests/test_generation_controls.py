@@ -131,3 +131,23 @@ async def test_chairman_fallback_truncated_empty_does_not_launch_another_paid_mo
     assert calls == ['chair', 'one']
     assert result['truncated'] is True
     assert result['response'] == ''
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('reasoning,expected_temperature', [(None, 0.5), ('medium', None)])
+async def test_strict_reasoning_routing_does_not_require_optional_temperature(monkeypatch, tmp_path, reasoning, expected_temperature):
+    monkeypatch.setattr(runtime_settings, 'SETTINGS_FILE', tmp_path / 'settings.json')
+    monkeypatch.setattr(openrouter.config, 'OPENROUTER_API_KEY', 'test-only')
+    runtime_settings.save_runtime_settings(runtime_settings.RuntimeSettings(
+        generation_limits={'stage1': {'max_tokens': 8192, 'reasoning_effort': reasoning}}))
+    payloads = []
+    async def post(self, url, **kwargs):
+        payloads.append(kwargs['json'])
+        return httpx.Response(200, request=httpx.Request('POST', url), json={
+            'choices': [{'message': {'content': 'answer'}, 'finish_reason': 'stop'}]})
+    with patch.object(httpx.AsyncClient, 'post', post):
+        await openrouter.query_model('test/model', [], stage='STAGE1', temperature=0.5)
+    assert payloads[0].get('temperature') == expected_temperature
+    if reasoning:
+        assert 'temperature' not in payloads[0]
+        assert payloads[0]['provider'] == {'require_parameters': True}

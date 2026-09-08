@@ -61,7 +61,11 @@ answer is short. Select values deliberately and monitor provider usage and balan
 
 OpenRouter receives `max_tokens` and optional `reasoning.max_tokens` or
 `reasoning.effort`. With explicit reasoning configured, provider routing requires
-parameter support (`provider.require_parameters: true`). This cannot guarantee
+parameter support (`provider.require_parameters: true`). Because this checks all
+supplied parameters, explicit reasoning also omits the optional stage temperature
+and uses the provider sampling default. This keeps reasoning-only models that do
+not support temperature eligible. With reasoning controls unset, the configured
+stage temperature is sent as before. This cannot guarantee
 that every upstream model honors an exact reasoning sub-budget: some models use
 adaptive thinking and may ignore explicit reasoning token budgets. Provider
 validation errors remain visible; the app never silently increases the output cap

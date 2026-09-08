@@ -119,7 +119,9 @@ async def query_model(
         payload["reasoning"] = {"effort": limits.reasoning_effort}
     if "reasoning" in payload:
         payload["provider"] = {"require_parameters": True}
-    if temperature is not None:
+    # Strict routing checks every supplied parameter. Reasoning-only models may
+    # not support temperature; use their sampling default when reasoning is explicit.
+    if temperature is not None and "reasoning" not in payload:
         payload["temperature"] = temperature
 
     # Retry loop for rate limits
