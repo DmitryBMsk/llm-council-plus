@@ -335,3 +335,24 @@ Monitor HTTP errors/latency, 409/429 rates, pending/partial runs, disk space/ino
 | OOM / slow PDF | Container budget versus concurrent parser workers; page/time caps; kernel/container OOM logs. |
 
 MIT License — see [LICENSE](LICENSE).
+
+### Tavily search troubleshooting
+
+Tavily requires `ENABLE_TAVILY=true` and `TAVILY_API_KEY` in the backend environment.
+Restart the backend after changing either value. The integration calls Tavily's
+Search API directly with a 30-second timeout (5-second connection timeout),
+`search_depth=advanced`, and up to three sources per search.
+
+Long automatic search prompts are condensed into a focused query by the model;
+explicit search also uses query optimization. A final 1200-character bound applies
+even if optimization fails. The original question sent to council models remains
+unchanged. Query optimization can incur a model call, and Tavily searches consume
+Tavily credits; failed requests are not automatically retried.
+
+The search panel distinguishes sources, no results, and **Search unavailable**.
+HTTP errors and timeouts are saved as structured diagnostics, not source content.
+Backend logs include HTTP status, provider request ID when available, and query
+length, without logging the Tavily key. Existing saved LangChain `HTTPError(...)`
+results are treated as failures when displayed or reused by continuation; original
+conversation files are not rewritten. A continuation reuses existing evidence and
+does not rerun a failed search. Send a new search message to obtain fresh sources.

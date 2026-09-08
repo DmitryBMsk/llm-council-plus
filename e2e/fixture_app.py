@@ -62,6 +62,22 @@ async def chat(request: Request):
 def backend_app():
     """Real application; only the external model catalog is seeded locally."""
     from backend.main import app as application
+    from backend import council, tools, search_results
+    import httpx
+    original_post = httpx.post
+
+    def search_post(url, **kwargs):
+        if url != 'https://api.tavily.com/search':
+            return original_post(url, **kwargs)
+        query = kwargs['json']['query']
+        assert 0 < len(query) <= 1200
+        if '__TAVILY_FAIL__' in query:
+            return httpx.Response(400, json={'detail': {'error': 'Invalid fixture query'}, 'request_id': 'fixture-fail'})
+        return httpx.Response(200, json={'results': [{'title': 'Tavily fixture source',
+            'url': 'https://example.com/tavily-source', 'content': 'SEARCH_EVIDENCE_42'}], 'request_id': 'fixture-ok'})
+
+    search_results.httpx.post = search_post
+    council.get_available_tools = lambda: [tools.tavily_tool('e2e-fixture-key')]
     from backend.api.routes import models
     models._models_cache['openrouter'] = {
         'timestamp': time.time(),

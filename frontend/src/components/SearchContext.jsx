@@ -96,14 +96,28 @@ export default function SearchContext({ toolOutputs }) {
     return list
       .map((t) => ({
         tool: t.tool,
+        status: t.status,
+        error: t.error,
         label: normalizeToolName(t.tool),
         raw: typeof t.result === 'string' ? t.result : JSON.stringify(t.result, null, 2),
       }))
-      .filter((t) => t.raw && t.raw.trim().length > 0);
+      .filter((t) => t.status === 'error' || t.status === 'empty' || (t.raw && t.raw.trim().length > 0));
   }, [toolOutputs]);
 
   const parsedByTool = useMemo(() => {
     return entries.map((e) => {
+      let legacy = e.raw;
+      for (let i = 0; i < 2 && typeof legacy === 'string'; i++) {
+        const decoded = safeParseJson(legacy);
+        if (decoded === null) break;
+        legacy = decoded;
+      }
+      if (e.status === 'error' || (typeof legacy === 'string' &&
+        (/^\s*(HTTPError|ReadTimeout|ConnectTimeout|ConnectionError|TimeoutError)\(/.test(legacy) ||
+          legacy.startsWith('[System Note: Web search failed.')))) {
+        return { ...e, parsedKind: 'error' };
+      }
+      if (e.status === 'empty') return { ...e, parsedKind: 'empty' };
       // Try structured parsing first (our formatted DuckDuckGo/Brave output)
       const parsed = parseWebSearchText(e.raw);
       if (parsed) return { ...e, parsed, parsedKind: 'results' };
@@ -117,9 +131,17 @@ export default function SearchContext({ toolOutputs }) {
   }, [entries]);
 
   if (!entries.length) return null;
+  const sourceCount = parsedByTool.filter((e) => !['error', 'empty'].includes(e.parsedKind)).length;
 
   return (
     <div className="search-context">
+      {parsedByTool.filter((e) => ['error', 'empty'].includes(e.parsedKind)).map((e, i) => (
+        <div role="status" key={`status-${i}`} className="search-context-status">
+          {e.label}: {e.parsedKind === 'error' ? 'Search unavailable' : 'No search results'}
+          {e.error?.status_code ? ` (HTTP ${e.error.status_code})` : ''}
+          . No sources from this search were used.
+        </div>
+      ))}
       <button
         type="button"
         className="search-context-toggle"
@@ -127,7 +149,7 @@ export default function SearchContext({ toolOutputs }) {
       >
         <span className="search-context-title">Search context</span>
         <span className="search-context-meta">
-          {entries.length} source{entries.length === 1 ? '' : 's'}
+          {sourceCount} source{sourceCount === 1 ? '' : 's'}
         </span>
         <span className="search-context-caret">{isOpen ? '▾' : '▸'}</span>
       </button>
@@ -140,7 +162,9 @@ export default function SearchContext({ toolOutputs }) {
                 <span className="search-context-provider">{e.label}</span>
               </div>
 
-              {e.parsedKind === 'results' && (
+              {e.parsedKind === 'error' && <p>Search failed. Check provider configuration or try a shorter search.</p>}
+              {e.parsedKind === 'empty' && <p>The search returned no sources.</p>}
+              {e.parsedKind === 'results'  && (
                 <div className="search-context-results">
                   {e.parsed.map((r, i) => {
                     const domain = getDomain(r.url);
