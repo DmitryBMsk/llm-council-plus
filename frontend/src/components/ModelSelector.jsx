@@ -15,19 +15,20 @@ const DEFAULT_MAX_MODELS = 5;
 // Minimum context length required for Chairman model (25K tokens)
 const MIN_CHAIRMAN_CONTEXT = 25000;
 
-// Built-in presets (will be merged with dynamic "Last Used")
+// OpenRouter IDs checked against the official catalog on 2026-09-08.
+// Exact IDs avoid selecting retired generations or cheaper :batch variants.
 const BUILT_IN_PRESETS = {
   ultra: {
     name: 'Ultra',
     description: 'Top-tier models for best quality',
-    modelPatterns: ['claude-opus', 'gpt-5.5', 'gemini-3.1-pro', 'gpt-4o'],
-    chairmanPattern: 'gemini-3.1-pro',
+    modelIds: ['openai/gpt-6-astra', 'anthropic/claude-fable-5.1', 'google/gemini-3.1-pro-preview', 'x-ai/grok-4.6'],
+    chairmanId: 'openai/gpt-6-astra',
   },
   budget: {
     name: 'Budget',
     description: 'Cost-effective models',
-    modelPatterns: ['grok-4', 'gpt-5-mini', 'gemini-2.5-flash', 'deepseek'],
-    chairmanPattern: 'gemini-2.5-flash',
+    modelIds: ['openai/gpt-5.6-luna', 'google/gemini-3.8-flash', 'deepseek/deepseek-v4-flash-0731', 'x-ai/grok-4.6'],
+    chairmanId: 'google/gemini-3.8-flash',
   },
   free: {
     name: 'Free',
@@ -355,29 +356,9 @@ export default function ModelSelector({ isOpen, onClose, onConfirm }) {
       const presetMax = Math.min(preset.maxModels || 7, maxModels);
       selectedIds = tierModels.slice(0, presetMax).map((m) => m.id);
       chairmanId = selectedIds[0] || '';
-    } else if (selectedIds.length === 0 && preset.modelPatterns) {
-      // Select by pattern matching
-      for (const pattern of preset.modelPatterns) {
-        if (selectedIds.length >= maxModels) break;
-        const match = allModels.find(
-          (m) => m.id.toLowerCase().includes(pattern.toLowerCase()) && !selectedIds.includes(m.id)
-        );
-        if (match) {
-          selectedIds.push(match.id);
-        }
-      }
-      // Find chairman
-      if (preset.chairmanPattern) {
-        const chairman = allModels.find((m) =>
-          m.id.toLowerCase().includes(preset.chairmanPattern.toLowerCase())
-        );
-        if (chairman) {
-          chairmanId = chairman.id;
-          if (!selectedIds.includes(chairmanId) && selectedIds.length < maxModels) {
-            selectedIds.push(chairmanId);
-          }
-        }
-      }
+    } else if (preset.modelIds) {
+      selectedIds = preset.modelIds.filter(id => allModels.some(model => model.id === id)).slice(0, maxModels);
+      chairmanId = selectedIds.includes(preset.chairmanId) ? preset.chairmanId : selectedIds[0] || '';
     }
 
     if (selectedIds.length > 0) {

@@ -88,3 +88,22 @@ describe('provider choice and Last Used', () => {
     expect(screen.getAllByText('ollama-b').length).toBeGreaterThan(0);
   });
 });
+
+it.each([
+  ['Ultra', ['openai/gpt-6-astra', 'anthropic/claude-fable-5.1', 'google/gemini-3.1-pro-preview', 'x-ai/grok-4.6']],
+  ['Budget', ['openai/gpt-5.6-luna', 'google/gemini-3.8-flash', 'deepseek/deepseek-v4-flash-0731', 'x-ai/grok-4.6']],
+])('%s selects exact current IDs instead of older or batch prefix matches', async (preset, expected) => {
+  const decoys = ['anthropic/claude-opus-4.1', 'openai/gpt-5.5:batch',
+    'google/gemini-3.1-pro-preview:batch', 'openai/gpt-4o', 'x-ai/grok-4',
+    'openai/gpt-5-mini', 'google/gemini-2.5-flash', 'deepseek/deepseek-v3.2'];
+  api.getModels.mockResolvedValue({
+    ...catalogs.openrouter,
+    models: [...decoys, ...expected].map(id => ({...catalogs.openrouter.models[0], id, name:id})),
+  });
+  const confirm = vi.fn();
+  render(<ModelSelector isOpen onClose={vi.fn()} onConfirm={confirm} />);
+  await waitFor(() => expect(screen.queryByText('Loading models...')).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', {name:new RegExp(`^${preset}`)}));
+  fireEvent.click(screen.getByRole('button', {name:/^Create Council/}));
+  expect(confirm).toHaveBeenCalledWith(expect.objectContaining({models:expected}));
+});
