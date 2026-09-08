@@ -21,7 +21,7 @@ dependencies = [
     # Database
     "sqlalchemy>=2.0.0",
     "alembic>=1.13.0",
-    "pymysql>=1.1.0",
+    "pymysql[rsa]>=1.1.0",
     # PDF / file parsing
     "pymupdf>=1.26.7",
     "pymupdf4llm>=0.2.9",

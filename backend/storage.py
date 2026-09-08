@@ -7,6 +7,7 @@ Based on DATABASE_TYPE environment variable (Feature 2):
 """
 
 import json
+import copy
 import logging
 import os
 import sys
@@ -19,6 +20,7 @@ from pathlib import Path
 from . import config
 from .database import is_using_database, SessionLocal
 from .models import Conversation as ConversationModel
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -357,6 +359,28 @@ def _db_get_conversation(conversation_id: str) -> Optional[Dict[str, Any]]:
         db.close()
 
 
+def _db_update_conversation(conversation_id, update_fn, *, username=None):
+    """Read and mutate under one SQL transaction and row lock."""
+    with SessionLocal() as db:
+        with db.begin():
+            if db.bind.dialect.name == "sqlite":
+                db.execute(text("BEGIN IMMEDIATE"))
+            row = db.query(ConversationModel).filter(ConversationModel.id == conversation_id).with_for_update().first()
+            if row is None or not _owner_matches(row.username, username):
+                raise ValueError(f"Conversation {conversation_id} not found")
+            conversation = _normalize_conversation(copy.deepcopy(row.to_dict()))
+            update_fn(conversation)
+            row.title = conversation.get("title", "New Conversation")
+            row.messages = conversation.get("messages", [])
+            row.models = {"models": conversation.get("models"),
+                          "execution_mode": conversation.get("execution_mode"),
+                          "router_type": conversation.get("router_type"),
+                          "system_prompt": conversation.get("system_prompt")}
+            row.chairman = conversation.get("chairman")
+            row.username = conversation.get("username")
+        return conversation
+
+
 def _db_save_conversation(conversation: Dict[str, Any]):
     """Save conversation to database."""
     db = SessionLocal()
@@ -369,11 +393,12 @@ def _db_save_conversation(conversation: Dict[str, Any]):
             db_conversation.title = conversation.get('title', 'New Conversation')
             db_conversation.messages = conversation.get('messages', [])
             models_value: Any = conversation.get('models')
-            if conversation.get("execution_mode") is not None or conversation.get("router_type") is not None:
+            if any(conversation.get(key) is not None for key in ("execution_mode", "router_type", "system_prompt")):
                 models_value = {
                     "models": models_value,
                     "execution_mode": conversation.get("execution_mode"),
                     "router_type": conversation.get("router_type"),
+                    "system_prompt": conversation.get("system_prompt"),
                 }
             db_conversation.models = models_value
             db_conversation.chairman = conversation.get('chairman')
@@ -590,31 +615,12 @@ def add_user_message(conversation_id: str, content: str):
         conversation_id: Conversation identifier
         content: User message content
     """
-    if is_using_database():
-        # NOTE (B0.4): this read-modify-write is NOT atomic — concurrent appends
-        # to the same conversation can lose updates. The JSON backend is the
-        # supported concurrent-safe path (file-locked via _json_update_conversation).
-        # If the SQL backend becomes a production target, replace this with an
-        # atomic transaction / SELECT ... FOR UPDATE.
-        conversation = get_conversation(conversation_id)
-        if conversation is None:
-            raise ValueError(f"Conversation {conversation_id} not found")
-
-        conversation["messages"].append({
-            "role": "user",
-            "content": content
-        })
-
-        save_conversation(conversation)
-        return
-
     def _update(conv: Dict[str, Any]) -> None:
-        conv.setdefault("messages", []).append({
-            "role": "user",
-            "content": content
-        })
-
-    _json_update_conversation(conversation_id, _update)
+        conv.setdefault("messages", []).append({"role": "user", "content": content})
+    if is_using_database():
+        _db_update_conversation(conversation_id, _update)
+    else:
+        _json_update_conversation(conversation_id, _update)
 
 
 def add_assistant_message(
@@ -649,20 +655,12 @@ def add_assistant_message(
     if metadata:
         message["metadata"] = metadata
 
-    if is_using_database():
-        # NOTE (B0.4): non-atomic read-modify-write — see add_user_message.
-        conversation = get_conversation(conversation_id)
-        if conversation is None:
-            raise ValueError(f"Conversation {conversation_id} not found")
-
-        conversation["messages"].append(message)
-        save_conversation(conversation)
-        return
-
     def _update(conv: Dict[str, Any]) -> None:
         conv.setdefault("messages", []).append(message)
-
-    _json_update_conversation(conversation_id, _update)
+    if is_using_database():
+        _db_update_conversation(conversation_id, _update)
+    else:
+        _json_update_conversation(conversation_id, _update)
 
 
 def update_conversation_title(conversation_id: str, title: str, *, username: Optional[str] = None):
@@ -677,20 +675,14 @@ def update_conversation_title(conversation_id: str, title: str, *, username: Opt
     Raises:
         ValueError: If conversation not found or ownership mismatch
     """
-    conv = get_conversation(conversation_id, username=username)
-    if conv is None:
-        raise ValueError(f"Conversation {conversation_id} not found")
-
-    if is_using_database():
-        # NOTE (B0.4): non-atomic read-modify-write — see add_user_message.
+    def _update(conv: Dict[str, Any]) -> None:
+        if not _owner_matches(conv.get("username"), username):
+            raise ValueError(f"Conversation {conversation_id} not found")
         conv["title"] = title
-        save_conversation(conv)
-        return
-
-    def _update(c: Dict[str, Any]) -> None:
-        c["title"] = title
-
-    _json_update_conversation(conversation_id, _update)
+    if is_using_database():
+        _db_update_conversation(conversation_id, _update, username=username)
+    else:
+        _json_update_conversation(conversation_id, _update)
 
 
 def delete_conversation(conversation_id: str, *, username: Optional[str] = None) -> bool:
