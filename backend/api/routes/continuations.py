@@ -10,6 +10,7 @@ from starlette.concurrency import run_in_threadpool
 
 from ... import attachments, config, storage, router_dispatch, runtime_settings
 from ...council import _usage_fields, parse_ranking_from_text, build_context_prompt
+from ...search_results import tool_context
 from ...usage import get_provider_usage
 from ...run_context import active_ticket
 from ...run_routes import managed_run
@@ -136,7 +137,7 @@ async def continue_response(
     question = _original_question(conversation, root_index)
     evidence = (root_message.get("metadata") or {}).get("tool_outputs")
     if evidence:
-        question += "\n\nOriginal tool evidence:\n" + json.dumps(evidence, ensure_ascii=False)
+        question += "\n\nOriginal tool evidence:\n" + tool_context(evidence)
     # Reference stages supply grounding for ranking/synthesis continuation, not
     # new evaluations. No other model/stage is run automatically.
     if request.stage != "stage1":

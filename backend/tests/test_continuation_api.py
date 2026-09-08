@@ -258,3 +258,15 @@ def test_reasoning_only_continuation_retains_stage_task(context, stage, directiv
     prompt = query.call_args.kwargs["messages"]
     assert directive in prompt[-1]["content"]
     assert "STORED_EVIDENCE_912" in str(prompt)
+
+
+def test_continuation_excludes_legacy_search_error(context):
+    client, cid, model, query = context
+    storage.add_assistant_message(cid, [{'model': model, 'response': 'Con', 'truncated': True}],
+        metadata={'tool_outputs': [{'tool': 'tavily_search', 'result': '"HTTPError(400 Bad Request)"'}]})
+    response = client.post(f'/api/conversations/{cid}/continue', json={
+        'message_index': 1, 'stage': 'stage1', 'model': model, 'request_id': str(uuid4())})
+    assert response.status_code == 200
+    text = str(query.call_args.kwargs['messages'])
+    assert 'HTTPError' not in text
+    assert 'Search unavailable' in text
