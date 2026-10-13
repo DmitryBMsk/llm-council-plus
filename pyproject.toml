@@ -47,7 +47,7 @@ dependencies = [
 # Packages with native build deps that fail on some platforms (macOS Intel, etc.)
 # yfinance pulls in curl-cffi; sentence-transformers pulls in torch
 finance = [
-    "yfinance>=0.2.0",
+    "yfinance>=1.4.1",
 ]
 database = [
     "psycopg2-binary>=2.9.0",
