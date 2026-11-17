@@ -60,6 +60,43 @@ def tavily_search(query, api_key):
         return {'status': 'error', 'error': {'code': 'network_error', 'message': 'Search provider could not be reached.'}}
 
 
+def specstream_search(query, api_key):
+    query = bounded_query(query)
+    if not query:
+        return {'status': 'error', 'error': {'code': 'empty_query', 'message': 'Search query is empty.'}}
+    try:
+        response = httpx.get(
+            'https://api.specstream.ai/v1/web-search',
+            headers={'Accept': 'application/json', 'X-API-Key': api_key},
+            params={'q': query, 'count': 3},
+            timeout=httpx.Timeout(30, connect=5),
+        )
+        try:
+            data = response.json()
+        except ValueError:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        if response.is_error:
+            message = 'Search provider rejected the request.'
+            logger.warning('SpecStream failed status=%s query_chars=%d', response.status_code, len(query))
+            return {'status': 'error', 'error': {
+                'code': 'http_error', 'status_code': response.status_code, 'message': message}}
+        rows = data.get('results')
+        if not isinstance(rows, list):
+            return {'status': 'error', 'error': {'code': 'invalid_response', 'message': 'Invalid search response.'}}
+        results = [
+            {key: str(row.get(key) or '')[:6000] for key in ('title', 'url', 'content')}
+            for row in rows[:3] if isinstance(row, dict) and str(row.get('url', '')).startswith(('https://', 'http://'))
+        ]
+        logger.info('SpecStream completed results=%d query_chars=%d', len(results), len(query))
+        return {'status': 'success' if results else 'empty', 'results': results}
+    except httpx.TimeoutException:
+        return {'status': 'error', 'error': {'code': 'timeout', 'message': 'Search timed out.'}}
+    except httpx.RequestError:
+        return {'status': 'error', 'error': {'code': 'network_error', 'message': 'Search provider could not be reached.'}}
+
+
 def search_failed(item):
     if item.get('status') == 'error':
         return True
