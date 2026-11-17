@@ -26,6 +26,7 @@ class WebSearchProvider(str, Enum):
     BRAVE = "brave"
     TAVILY = "tavily"
     EXA = "exa"
+    SPECSTREAM = "specstream"
 
 
 SEARCH_TIMEOUT_BUDGET_S = 60.0
@@ -200,6 +201,77 @@ async def _search_brave(
     return "\n\n".join(formatted)
 
 
+async def _search_specstream(
+    query: str,
+    *,
+    max_results: int = DEFAULT_MAX_RESULTS,
+    full_content_results: int = DEFAULT_FULL_CONTENT_RESULTS,
+) -> str:
+    """SpecStream Search API. Requires ENABLE_SPECSTREAM=true and SPECSTREAM_API_KEY."""
+    api_key = (config.SPECSTREAM_API_KEY or "").strip()
+    if not (config.ENABLE_SPECSTREAM and api_key):
+        return "[System Note: SpecStream search is not configured. Set ENABLE_SPECSTREAM=true and SPECSTREAM_API_KEY.]"
+
+    start = time.time()
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.get(
+            "https://api.specstream.ai/v1/web-search",
+            params={"q": query, "count": max_results},
+            headers={"Accept": "application/json", "X-API-Key": api_key},
+        )
+    if resp.status_code != 200:
+        logger.warning("[WEB_SEARCH] SpecStream returned %s: %s", resp.status_code, resp.text[:300])
+        return "[System Note: SpecStream search failed. Please check your API key.]"
+
+    data = resp.json()
+    web_results = data.get("results") or []
+    if not web_results:
+        return "No web search results found."
+
+    normalized = []
+    urls_to_fetch: List[tuple[int, str]] = []
+    for idx, r in enumerate(web_results[:max_results], 1):
+        title = r.get("title") or "No Title"
+        url = r.get("url") or ""
+        summary = r.get("description") or "No description available."
+        normalized.append(
+            {
+                "index": idx,
+                "title": title,
+                "url": url,
+                "summary": summary,
+                "content": None,
+            }
+        )
+        if full_content_results > 0 and idx <= full_content_results and url:
+            urls_to_fetch.append((idx - 1, url))
+
+    for idx0, url in urls_to_fetch:
+        elapsed = time.time() - start
+        remaining = SEARCH_TIMEOUT_BUDGET_S - elapsed
+        if remaining <= 5:
+            break
+        content = await _fetch_with_jina(url, timeout=min(25.0, remaining))
+        if content:
+            if len(content) < 500:
+                content += (
+                    "\n\n[System Note: Full content fetch yielded limited text. "
+                    "Appending original summary.]\n"
+                    f"Original Summary: {normalized[idx0]['summary']}"
+                )
+            normalized[idx0]["content"] = content
+
+    formatted = []
+    for r in normalized:
+        text = f"Result {r['index']}:\nTitle: {r['title']}\nURL: {r['url']}"
+        if r["content"]:
+            text += f"\nContent:\n{_truncate(r['content'], 2000)}"
+        else:
+            text += f"\nSummary: {_truncate(r['summary'], 800)}"
+        formatted.append(text)
+    return "\n\n".join(formatted)
+
+
 def duckduckgo_available() -> bool:
     try:
         import ddgs  # noqa: F401
@@ -223,6 +295,8 @@ async def perform_web_search(
         return await _search_duckduckgo(query, max_results=max_results, full_content_results=full_content_results)
     if p == WebSearchProvider.BRAVE.value:
         return await _search_brave(query, max_results=max_results, full_content_results=full_content_results)
+    if p == WebSearchProvider.SPECSTREAM.value:
+        return await _search_specstream(query, max_results=max_results, full_content_results=full_content_results)
     if p in (WebSearchProvider.TAVILY.value, WebSearchProvider.EXA.value):
         raise ValueError("tavily/exa are handled via existing tools layer")
     raise ValueError(f"Unknown web search provider: {provider}")
