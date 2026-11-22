@@ -140,6 +140,15 @@ describe('answer-first layout', () => {
     expect(draft).toBeVisible();
   });
 
+  it('counts only the models that answered in the council summary', () => {
+    const { getByText } = renderMessage({
+      ...answered,
+      stage1: [answered.stage1[0], { model: 'b/beta', error: true, error_type: 'timeout', error_message: 'Timed out' }],
+    });
+
+    expect(getByText(/How the council decided/)).toHaveTextContent('1 response · top-ranked: beta');
+  });
+
   it('keeps the stages expanded while there is no final answer', () => {
     const { getByText, queryByText } = renderMessage({ ...answered, stage3: null });
 

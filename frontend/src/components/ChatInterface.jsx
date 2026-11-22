@@ -16,6 +16,8 @@ import './ChatInterface.css';
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB for regular files
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB for images
 
+const answeredCount = (stage1) => (stage1 || []).filter((r) => r.response?.trim()).length;
+
 function formatFileSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -400,7 +402,8 @@ export default function ChatInterface({
                   <summary hidden={!msg.stage3 || !(msg.stage1?.length || msg.stage2?.length)}>
                     How the council decided
                     <span className="council-process-meta">
-                      {msg.stage1?.length || 0} responses
+                      {/* Failed models stay in stage1 as error rows; count answers, like the backend does */}
+                      {answeredCount(msg.stage1)} response{answeredCount(msg.stage1) === 1 ? '' : 's'}
                       {msg.metadata?.aggregate_rankings?.[0] && ` · top-ranked: ${msg.metadata.aggregate_rankings[0].model.split('/')[1] || msg.metadata.aggregate_rankings[0].model}`}
                     </span>
                   </summary>
