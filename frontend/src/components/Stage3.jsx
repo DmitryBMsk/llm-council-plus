@@ -8,6 +8,29 @@ import './Stage3.css';
 
 const shortName = (model) => model.split('/')[1] || model;
 
+async function copyText(text) {
+  if (navigator.clipboard) {
+    return navigator.clipboard.writeText(text);
+  }
+  // Plain-HTTP origins other than localhost have no Clipboard API (e.g. the app opened
+  // from another machine on the LAN); the deprecated copy command still works there
+  const focused = document.activeElement;
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  try {
+    if (!document.execCommand('copy')) {
+      throw new Error('copy command rejected');
+    }
+  } finally {
+    area.remove();
+    focused?.focus();
+  }
+}
+
 const Stage3 = memo(function Stage3({ finalResponse, timings, onContinue, busy }) {
   const [copyState, setCopyState] = useState(null);
 
@@ -17,8 +40,7 @@ const Stage3 = memo(function Stage3({ finalResponse, timings, onContinue, busy }
 
   const copy = async () => {
     try {
-      // navigator.clipboard is undefined on plain-HTTP origins other than localhost
-      await navigator.clipboard.writeText(finalResponse.response);
+      await copyText(finalResponse.response);
       setCopyState('Copied');
     } catch {
       setCopyState('Copy failed');

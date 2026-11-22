@@ -4,7 +4,10 @@ import Stage3 from './Stage3';
 
 const setClipboard = (value) => Object.defineProperty(navigator, 'clipboard', { value, configurable: true });
 
-afterEach(() => setClipboard(undefined));
+afterEach(() => {
+  setClipboard(undefined);
+  delete document.execCommand;
+});
 
 describe('Stage3 copy button', () => {
   it('copies the raw final answer and confirms it', async () => {
@@ -18,12 +21,40 @@ describe('Stage3 copy button', () => {
     expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
   });
 
-  it('says so when the browser gives no clipboard access', async () => {
-    render(<Stage3 finalResponse={{ model: 'c/chair', response: 'Final verdict' }} />);
+  // Opened over plain HTTP from another machine, the page has no navigator.clipboard
+  it('copies through the legacy copy command when the Clipboard API is missing', async () => {
+    let copied;
+    document.execCommand = vi.fn(() => {
+      copied = document.querySelector('textarea').value;
+      return true;
+    });
+    render(<Stage3 finalResponse={{ model: 'c/chair', response: '**Final** verdict' }} />);
+    const button = screen.getByRole('button', { name: 'Copy answer' });
+    button.focus();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Copy answer' }));
+    fireEvent.click(button);
+
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument();
+    expect(document.execCommand).toHaveBeenCalledWith('copy');
+    expect(copied).toBe('**Final** verdict');
+    expect(document.querySelector('textarea')).toBeNull();
+    expect(button).toHaveFocus();
+  });
+
+  it.each([
+    ['refuses to copy', () => false],
+    ['throws on the copy command', () => { throw new Error('blocked'); }],
+  ])('says so and cleans up when the browser %s', async (_case, execCommand) => {
+    document.execCommand = vi.fn(execCommand);
+    render(<Stage3 finalResponse={{ model: 'c/chair', response: 'Final verdict' }} />);
+    const button = screen.getByRole('button', { name: 'Copy answer' });
+    button.focus();
+
+    fireEvent.click(button);
 
     expect(await screen.findByRole('button', { name: 'Copy failed' })).toBeInTheDocument();
+    expect(document.querySelector('textarea')).toBeNull();
+    expect(button).toHaveFocus();
   });
 
   // A token-limited answer whose budget went to reasoning arrives as '' or null
