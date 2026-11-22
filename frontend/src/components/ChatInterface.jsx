@@ -390,6 +390,21 @@ export default function ChatInterface({
                   {msg.metadata?.continuation_of && <p role="status">Continuation from {msg.metadata.continuation_of.model}. Previous rankings and synthesis were not rerun.</p>}
                   <SearchContext toolOutputs={msg.metadata?.tool_outputs || msg.tool_outputs} />
 
+                  {/* Final answer first; the stages that produced it collapse below it */}
+                  {msg.stage3 && <Stage3 busy={isLoading || continuationBusy} onContinue={onContinueResponse ? model => onContinueResponse(index, 'stage3', model) : undefined} finalResponse={msg.stage3} timings={msg.timings?.stage3} />}
+
+                  {/* Always the same <details> so Stage 1/2 keep their tab state when the answer
+                      arrives; it stays open until there is answer text, and when synthesis failed.
+                      A continuation message has only stage3, so it gets no summary. */}
+                  <details className="council-process" open={!msg.stage3?.response?.trim() || Boolean(msg.stage3.error)}>
+                  <summary hidden={!msg.stage3 || !(msg.stage1?.length || msg.stage2?.length)}>
+                    How the council decided
+                    <span className="council-process-meta">
+                      {msg.stage1?.length || 0} responses
+                      {msg.metadata?.aggregate_rankings?.[0] && ` · top-ranked: ${msg.metadata.aggregate_rankings[0].model.split('/')[1] || msg.metadata.aggregate_rankings[0].model}`}
+                    </span>
+                  </summary>
+
                   {/* Stage 1 */}
                   {msg.loading?.stage1 && (
                     <div className="stage-loading">
@@ -425,6 +440,7 @@ export default function ChatInterface({
                       timings={msg.timings?.stage2}
                     />
                   )}
+                  </details>
 
                   {/* Stage 3 */}
                   {msg.loading?.stage3 && (
@@ -436,7 +452,6 @@ export default function ChatInterface({
                       <RealtimeTimer startTime={msg.timings?.stage3?.start} />
                     </div>
                   )}
-                  {msg.stage3 && <Stage3 busy={isLoading || continuationBusy} onContinue={onContinueResponse ? model => onContinueResponse(index, 'stage3', model) : undefined} finalResponse={msg.stage3} timings={msg.timings?.stage3} />}
 
                   {/* Token Stats - show TOON savings after Stage 3 */}
                   {msg.stage3 && msg.metadata?.token_stats && (
