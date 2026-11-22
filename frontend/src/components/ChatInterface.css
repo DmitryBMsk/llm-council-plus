@@ -392,6 +392,49 @@
   cursor: not-allowed;
 }
 
+/* Stages 1-2, collapsed under the final answer once it exists */
+.council-process > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.council-process > summary[hidden] {
+  display: none;
+}
+
+.council-process > summary::before {
+  content: '▸';
+  color: var(--text-secondary);
+}
+
+.council-process[open] > summary::before {
+  content: '▾';
+}
+
+.council-process > summary:hover {
+  background: var(--bg-hover);
+}
+
+.council-process > summary:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.council-process-meta {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+
 /* Export button styles */
 .export-actions {
   display: flex;

@@ -175,3 +175,41 @@
     box-shadow: 0 6px 30px rgba(63, 185, 80, 0.3);
   }
 }
+
+.final-response-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.final-response-bar .chairman-label {
+  margin-bottom: 0;
+}
+
+.copy-answer {
+  padding: 6px 12px;
+}
+
+/* Failed synthesis: red frame instead of the green answer frame */
+.stage3 .final-error {
+  background: rgba(248, 81, 73, 0.08);
+  border-color: rgba(248, 81, 73, 0.4);
+  box-shadow: none;
+  animation: none;
+  color: var(--text-primary);
+}
+
+.final-error::before {
+  background: var(--accent-red);
+}
+
+.final-error strong {
+  color: var(--accent-red);
+}
+
+.final-error p {
+  margin: 8px 0 0;
+}

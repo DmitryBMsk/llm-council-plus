@@ -108,6 +108,88 @@ describe('attachment size limits', () => {
   });
 });
 
+describe('answer-first layout', () => {
+  const answered = {
+    role: 'assistant',
+    stage1: [
+      { model: 'a/alpha', response: 'Alpha draft' },
+      { model: 'b/beta', response: 'Beta draft' },
+    ],
+    stage2: [{ model: 'a/alpha', ranking: 'FINAL RANKING:\n1. Response B', parsed_ranking: ['Response B'] }],
+    stage3: { model: 'c/chair', response: 'Final verdict' },
+    metadata: {
+      label_to_model: { 'Response A': 'a/alpha', 'Response B': 'b/beta' },
+      aggregate_rankings: [{ model: 'b/beta', average_rank: 1, rankings_count: 1 }],
+    },
+  };
+  const renderMessage = (message) => render(
+    <ChatInterface conversation={{ id: 'layout', messages: [{ role: 'user', content: 'Q' }, message] }} />,
+  );
+
+  it('shows the final answer before the stages and collapses stages 1-2', () => {
+    const { getByText } = renderMessage(answered);
+    const answer = getByText('Final verdict');
+    const draft = getByText('Alpha draft');
+
+    expect(answer).toBeVisible();
+    expect(answer.compareDocumentPosition(draft) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(draft).not.toBeVisible();
+    expect(getByText('Stage 2: Peer Rankings')).not.toBeVisible();
+
+    fireEvent.click(getByText(/How the council decided/));
+    expect(draft).toBeVisible();
+  });
+
+  it('keeps the stages expanded while there is no final answer', () => {
+    const { getByText, queryByText } = renderMessage({ ...answered, stage3: null });
+
+    expect(getByText('Alpha draft')).toBeVisible();
+    expect(queryByText(/How the council decided/)).not.toBeVisible();
+  });
+
+  it('keeps the stages expanded when the final synthesis failed', () => {
+    const { getByText, getByRole } = renderMessage({
+      ...answered,
+      stage3: { model: 'c/chair', error: true, response: 'Error: Unable to generate final synthesis.' },
+    });
+
+    expect(getByRole('alert')).toHaveTextContent('Final synthesis failed');
+    expect(getByText('Alpha draft')).toBeVisible();
+  });
+
+  it.each(['', null])('keeps the stages expanded when the final answer came back empty (%j)', (response) => {
+    const { getByText } = renderMessage({
+      ...answered,
+      stage3: { model: 'c/chair', response, truncated: true, finish_reason: 'length' },
+    });
+
+    expect(getByText('Alpha draft')).toBeVisible();
+  });
+
+  it('collapses the stages when the answer arrives and keeps the selected tab', () => {
+    const conversation = (message) => ({ id: 'layout', messages: [{ role: 'user', content: 'Q' }, message] });
+    const { getByText, getByRole, rerender } = render(
+      <ChatInterface conversation={conversation({ ...answered, stage3: null })} />,
+    );
+    fireEvent.click(getByRole('button', { name: 'beta' }));
+    expect(getByText('Beta draft')).toBeVisible();
+
+    rerender(<ChatInterface conversation={conversation(answered)} />);
+
+    expect(getByText('Final verdict')).toBeVisible();
+    expect(getByText('Beta draft')).not.toBeVisible();
+    fireEvent.click(getByText(/How the council decided/));
+    expect(getByText('Beta draft')).toBeVisible();
+  });
+
+  it('offers no council block on a continuation that has only a final answer', () => {
+    const { getByText, queryByText } = renderMessage({ role: 'assistant', stage3: answered.stage3 });
+
+    expect(getByText('Final verdict')).toBeVisible();
+    expect(queryByText(/How the council decided/)).not.toBeVisible();
+  });
+});
+
 it('blocks Ollama images with an actionable warning before upload', async () => {
   const onUploadFile = vi.fn();
   const addToast = vi.fn();
