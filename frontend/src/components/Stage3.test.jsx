@@ -41,13 +41,20 @@ describe('Stage3 copy button', () => {
     expect(button).toHaveFocus();
   });
 
-  it('says so when the browser refuses to copy', async () => {
-    document.execCommand = vi.fn(() => false);
+  it.each([
+    ['refuses to copy', () => false],
+    ['throws on the copy command', () => { throw new Error('blocked'); }],
+  ])('says so and cleans up when the browser %s', async (_case, execCommand) => {
+    document.execCommand = vi.fn(execCommand);
     render(<Stage3 finalResponse={{ model: 'c/chair', response: 'Final verdict' }} />);
+    const button = screen.getByRole('button', { name: 'Copy answer' });
+    button.focus();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Copy answer' }));
+    fireEvent.click(button);
 
     expect(await screen.findByRole('button', { name: 'Copy failed' })).toBeInTheDocument();
+    expect(document.querySelector('textarea')).toBeNull();
+    expect(button).toHaveFocus();
   });
 
   // A token-limited answer whose budget went to reasoning arrives as '' or null

@@ -21,11 +21,13 @@ async function copyText(text) {
   area.style.opacity = '0';
   document.body.appendChild(area);
   area.select();
-  const ok = document.execCommand('copy');
-  area.remove();
-  focused?.focus();
-  if (!ok) {
-    throw new Error('copy command rejected');
+  try {
+    if (!document.execCommand('copy')) {
+      throw new Error('copy command rejected');
+    }
+  } finally {
+    area.remove();
+    focused?.focus();
   }
 }
 
