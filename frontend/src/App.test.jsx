@@ -11,6 +11,7 @@ vi.mock('./api', () => ({
     listConversations: vi.fn(),
     getConversation: vi.fn(),
     sendMessageStream: vi.fn(),
+    continueResponse: vi.fn(),
     uploadFile: vi.fn(),
     uploadToDrive: vi.fn(),
   },
@@ -41,7 +42,7 @@ vi.mock('./components/Sidebar', () => ({
 }));
 
 vi.mock('./components/ChatInterface', () => ({
-  default: ({ conversation, onSendMessage, isLoading }) => {
+  default: ({ conversation, onSendMessage, onContinueResponse, isLoading }) => {
     const messages = conversation?.messages || [];
     const assistantMessage = [...messages].reverse().find((message) => message.role === 'assistant');
 
@@ -58,6 +59,9 @@ vi.mock('./components/ChatInterface', () => ({
         </pre>
         <button type="button" onClick={() => onSendMessage('Question')}>
           Send
+        </button>
+        <button type="button" onClick={() => onContinueResponse(1, 'stage3', 'c/chair', 'regenerate')}>
+          Regenerate
         </button>
       </main>
     );
@@ -347,4 +351,39 @@ it('keeps the usage summary of the complete event on the finished message', asyn
 
   await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
   expect(JSON.parse(screen.getByTestId('assistant-metadata').textContent)).toMatchObject({ provider_usage });
+});
+
+describe('partial reruns', () => {
+  const regenerate = async (times) => {
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }));
+    await waitFor(() => expect(api.continueResponse).toHaveBeenCalledTimes(times));
+    await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
+  };
+
+  it('sends every regeneration click after a success as a new paid request', async () => {
+    api.continueResponse.mockResolvedValue({});
+    await renderReadyApp();
+    await selectConversation('Conversation B', 'conv-b');
+
+    await regenerate(1);
+    await regenerate(2);
+
+    const [first, second] = api.continueResponse.mock.calls;
+    expect(first).toEqual(['conv-b', { message_index: 1, chairman: 'c/chair', request_id: expect.any(String) }, 'regenerate']);
+    expect(second[1].request_id).not.toBe(first[1].request_id);
+  });
+
+  // A lost response may hide an accepted request: the same id lets the server replay it
+  it('reuses the request id when the outcome of a rerun is unknown', async () => {
+    api.continueResponse.mockRejectedValueOnce(new Error('Network down')).mockResolvedValue({});
+    await renderReadyApp();
+    await selectConversation('Conversation B', 'conv-b');
+
+    await regenerate(1);
+    await regenerate(2);
+
+    const [first, second] = api.continueResponse.mock.calls;
+    expect(second[1].request_id).toBe(first[1].request_id);
+    expect(screen.getByTestId('toasts')).toHaveTextContent('Network down');
+  });
 });

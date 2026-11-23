@@ -76,14 +76,15 @@ async function authFetch(url, options = {}) {
 }
 
 export const api = {
-  async continueResponse(conversationId, body) {
-    const response = await authFetch(`${API_BASE}/api/conversations/${conversationId}/continue`, {
+  // action: 'continue', 'retry-model' or 'regenerate'; each is one explicit paid request
+  async continueResponse(conversationId, body, action = 'continue') {
+    const response = await authFetch(`${API_BASE}/api/conversations/${conversationId}/${action}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       const detail = error.detail;
-      const failure = new Error(typeof detail === 'string' ? detail : detail?.message || `Continuation failed (${response.status})`);
+      const failure = new Error(typeof detail === 'string' ? detail : detail?.message || `${action === 'continue' ? 'Continuation' : 'Rerun'} failed (${response.status})`);
       failure.status = response.status;
       failure.code = detail?.code;
       failure.runStatus = detail?.status;

@@ -214,6 +214,55 @@ describe('answer-first layout', () => {
   });
 });
 
+describe('partial reruns', () => {
+  const failed = {
+    role: 'assistant',
+    stage1: [
+      { model: 'a/alpha', error: true, error_type: 'timeout', error_message: 'Request timed out' },
+      { model: 'b/beta', response: 'Beta draft' },
+    ],
+    stage3: { model: 'c/chair', response: 'Final verdict' },
+    metadata: {},
+  };
+  const conversation = (...messages) => ({
+    id: 'rerun', models: ['a/alpha', 'b/beta'], chairman: 'c/chair', messages: [{ role: 'user', content: 'Q' }, ...messages],
+  });
+
+  it('sends a retry and a regeneration for the message they were clicked on', () => {
+    const onContinueResponse = vi.fn();
+    const { getByRole } = render(<ChatInterface conversation={conversation(failed)} onContinueResponse={onContinueResponse} />);
+
+    fireEvent.click(getByRole('button', { name: 'Retry model (additional paid request)' }));
+    fireEvent.change(getByRole('combobox', { name: 'Chairman for the regenerated answer' }), { target: { value: 'b/beta' } });
+    fireEvent.click(getByRole('button', { name: 'Regenerate final answer (additional paid request)' }));
+
+    expect(onContinueResponse.mock.calls).toEqual([
+      [1, 'stage1', 'a/alpha', 'retry-model'],
+      [1, 'stage3', 'b/beta', 'regenerate'],
+    ]);
+  });
+
+  it('disables both controls while a continuation is busy', () => {
+    const { getByRole } = render(<ChatInterface conversation={conversation(failed)} onContinueResponse={vi.fn()} continuationBusy />);
+
+    expect(getByRole('button', { name: 'Retry model (additional paid request)' })).toBeDisabled();
+    expect(getByRole('button', { name: 'Regenerate final answer (additional paid request)' })).toBeDisabled();
+  });
+
+  it('says what a rerun message reran and what it left alone', () => {
+    const { getByText } = render(<ChatInterface conversation={conversation(
+      failed,
+      { role: 'user', content: 'Retry a/alpha' },
+      { role: 'assistant', stage1: [{ model: 'a/alpha', response: 'Alpha retried' }], metadata: { retry_of: { message_index: 1, stage: 'stage1', model: 'a/alpha' } } },
+      { role: 'user', content: 'Regenerate' },
+      { role: 'assistant', stage1: [], stage3: { model: 'b/beta', response: 'Second verdict' }, metadata: { retry_of: { message_index: 1, stage: 'stage3', model: 'b/beta' } } },
+    )} />);
+
+    expect(getByText('Retry of a/alpha. Other models, rankings and synthesis were not rerun.')).toHaveAttribute('role', 'status');
+    expect(getByText('Final answer regenerated with b/beta. Stage 1 answers and Stage 2 rankings were not rerun.')).toHaveAttribute('role', 'status');
+  });
+});
+
 it('blocks Ollama images with an actionable warning before upload', async () => {
   const onUploadFile = vi.fn();
   const addToast = vi.fn();
