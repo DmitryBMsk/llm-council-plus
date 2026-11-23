@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import RunUsage, { RowUsage } from './RunUsage';
 import Stage1 from './Stage1';
 import Stage2 from './Stage2';
@@ -27,6 +27,7 @@ describe('RunUsage', () => {
     expect(summary).toHaveTextContent('Completion tokens 345');
     expect(summary).toHaveTextContent('Cost $0.0123');
     expect(summary).not.toHaveTextContent('calls');
+    expect(summary).not.toHaveTextContent('Total tokens');
     expect(summary).not.toHaveTextContent('Stage responses only');
   });
 
@@ -58,9 +59,31 @@ describe('RunUsage', () => {
       },
     });
 
-    expect(summary).toHaveTextContent('Prompt tokens 60');
+    // An incomplete summary never presents a total as final, even one every call reported
+    expect(summary).toHaveTextContent('Prompt tokens 60 (reported by 3 of 3 calls)');
+    expect(summary).toHaveTextContent('Completion tokens 30 (reported by 3 of 3 calls)');
     expect(summary).toHaveTextContent('Cost not reported');
-    expect(summary).not.toHaveTextContent('calls');
+  });
+
+  it('shows the total when calls reported it without a prompt/completion split', () => {
+    const stored = summaryOf({
+      metadata: {
+        provider_usage: providerUsage({
+          totals: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 620, provider_cost: null },
+          coverage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, provider_cost: 0 },
+          attempts: 2,
+          complete: false,
+        }),
+      },
+    });
+    expect(stored).toHaveTextContent('Prompt tokens 100 (reported by 1 of 2 calls)');
+    expect(stored).toHaveTextContent('Total tokens 620 (reported by 2 of 2 calls)');
+
+    cleanup();
+    const fromRows = summaryOf({ stage1: [{ model: 'a/one', usage: { total_tokens: 500 } }], metadata: {} });
+    expect(fromRows).toHaveTextContent('Prompt tokens not reported');
+    expect(fromRows).toHaveTextContent('Total tokens 500');
+    expect(fromRows).toHaveTextContent('Stage responses only');
   });
 
   it('shows a cost the provider reported as zero', () => {
@@ -110,6 +133,9 @@ describe('RowUsage', () => {
 
     rerender(<RowUsage usage={{ prompt_tokens: 2000, completion_tokens: 10, cost: 0.00002 }} />);
     expect(container).toHaveTextContent('$0.00002');
+
+    rerender(<RowUsage usage={{ total_tokens: 500 }} />);
+    expect(container).toHaveTextContent('500 tokens');
 
     rerender(<RowUsage />);
     expect(container).toBeEmptyDOMElement();

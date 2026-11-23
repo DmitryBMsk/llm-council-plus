@@ -14,6 +14,7 @@ const money = (value) => {
 const FIGURES = [
   ['prompt_tokens', 'prompt_tokens', 'Prompt tokens', tokens],
   ['completion_tokens', 'completion_tokens', 'Completion tokens', tokens],
+  ['total_tokens', 'total_tokens', 'Total tokens', tokens],
   ['provider_cost', 'cost', 'Cost', money],
 ];
 
@@ -35,6 +36,8 @@ export function RowUsage({ usage }) {
   const parts = [
     known(usage?.prompt_tokens) && `${tokens(usage.prompt_tokens)} prompt tokens`,
     known(usage?.completion_tokens) && `${tokens(usage.completion_tokens)} completion tokens`,
+    // Some providers report a total without the split
+    !known(usage?.prompt_tokens) && !known(usage?.completion_tokens) && known(usage?.total_tokens) && `${tokens(usage.total_tokens)} tokens`,
     known(usage?.cost) && money(usage.cost),
   ].filter(Boolean);
   return parts.length ? <span className="row-usage">{parts.join(' · ')}</span> : null;
@@ -44,18 +47,24 @@ RowUsage.propTypes = { usage: PropTypes.object };
 
 export default function RunUsage({ message }) {
   const stored = message.metadata?.provider_usage;
-  const { totals, coverage, attempts, scope } = stored?.attempts ? stored : fromStageRows(message);
-  const reported = (key) => coverage?.[key] > 0 && known(totals?.[key]);
+  const { totals, coverage, attempts, scope, complete } = stored?.attempts ? stored : fromStageRows(message);
+  const count = (key) => coverage?.[key] || 0;
+  const reported = (key) => count(key) > 0 && known(totals?.[key]);
   if (!FIGURES.some(([key]) => reported(key))) return null;
 
+  // The total adds nothing to the split, unless more calls reported it than reported the split
+  const shown = FIGURES.filter(
+    ([key]) => key !== 'total_tokens' || count(key) > Math.min(count('prompt_tokens'), count('completion_tokens'))
+  );
   const toon = message.metadata?.token_stats?.total;
   return (
     <div className="run-usage" role="group" aria-label="Run usage">
       <div className="run-usage-figures">
-        {FIGURES.map(([key, , label, format]) => (
+        {shown.map(([key, , label, format]) => (
           <span key={key}>
             {label} {reported(key) ? format(totals[key]) : 'not reported'}
-            {reported(key) && coverage[key] < attempts && ` (reported by ${coverage[key]} of ${attempts} calls)`}
+            {/* An incomplete summary (#56) gives the count for every figure, not only a partly reported one */}
+            {reported(key) && (complete === false || count(key) < attempts) && ` (reported by ${count(key)} of ${attempts} calls)`}
           </span>
         ))}
       </div>
