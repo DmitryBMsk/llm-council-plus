@@ -85,6 +85,13 @@ Capture usage for every actual attempt, including fallback and title generation,
 when calculating total run spend. TOON savings are not provider billing. This
 module does not estimate unavailable prices or promise a monetary hard budget.
 
+The summary of all attempts is stored as `metadata.provider_usage` of the
+assistant message on `/message` and `/message/stream` (the stream stores it at
+the `complete` event, after the title call), and the UI shows it under the
+answer. A run interrupted before `complete`, and messages saved before this was
+added, have no stored summary: the UI then sums the stage rows and labels the
+result "Stage responses only".
+
 References checked through Context7:
 - https://github.com/openrouterteam/docs/blob/main/cookbook/administration/usage-accounting.mdx
 - https://github.com/ollama/ollama/blob/main/docs/api.md

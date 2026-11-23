@@ -17,6 +17,7 @@ from ... import attachments as attachment_store
 from ... import storage
 from ... import config
 from ...run_routes import managed_run, validate_models
+from ...usage import get_provider_usage
 from ...council import (
     run_full_council, generate_conversation_title,
     stage1_collect_responses_streaming,
@@ -529,6 +530,9 @@ async def send_message(
     except ValueError as e:
         # Translate configuration errors (e.g., no council models) to 400
         raise HTTPException(status_code=400, detail=str(e))
+
+    # The title call ran before the council, so the usage summary is final here
+    metadata = {**metadata, "provider_usage": get_provider_usage()}
 
     # Add assistant message with all stages and metadata
     await run_in_threadpool(storage.add_assistant_message,

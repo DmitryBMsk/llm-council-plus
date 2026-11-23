@@ -612,6 +612,14 @@ function App() {
           }
 
           case 'complete': {
+            // Keep the run's usage summary, so it shows without a reload
+            if (event.metadata?.provider_usage) {
+              updateStreamingState((prev) => {
+                const lastMsg = prev.messages[prev.messages.length - 1];
+                const metadata = { ...lastMsg.metadata, provider_usage: event.metadata.provider_usage };
+                return { ...prev, messages: [...prev.messages.slice(0, -1), { ...lastMsg, metadata }] };
+              });
+            }
             finishStream(currentConversationId);
             loadConversations();
             if (attachments?.length && currentConversationIdRef.current === currentConversationId) loadConversation(currentConversationId);

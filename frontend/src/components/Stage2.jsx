@@ -1,4 +1,5 @@
 import TruncationNotice from './TruncationNotice';
+import { RowUsage } from './RunUsage';
 import { useState, memo } from 'react';
 import PropTypes from 'prop-types';
 import ReactMarkdown from 'react-markdown';
@@ -102,7 +103,7 @@ const Stage2 = memo(function Stage2({ rankings, labelToModel, aggregateRankings,
 
       <div className={`tab-content ${hasError ? 'tab-content-error' : ''}`}>
         <div className="ranking-model">
-          {currentRanking.model}
+          {currentRanking.model}<RowUsage usage={currentRanking.usage} />
         </div>
         <TruncationNotice result={currentRanking} onContinue={onContinue} busy={busy} />
         {hasError ? (

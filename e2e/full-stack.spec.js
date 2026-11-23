@@ -26,9 +26,16 @@ for (const [router, mode] of ['ollama', 'openrouter'].flatMap(router =>
     expect(saved.messages[1].stage1).toHaveLength(2);
     expect(Boolean(saved.messages[1].stage2?.length)).toBe(mode !== 'chat_only');
     expect(Boolean(saved.messages[1].stage3?.response)).toBe(mode === 'full');
+    // #56: the usage summary of the run survives a reload unchanged
+    const usage = page.getByRole('group', { name: 'Run usage' });
+    await expect(usage).toContainText('Prompt tokens');
+    await expect(usage).toContainText(router === 'ollama' ? 'Cost not reported' : 'Cost $0.00');
+    await expect(usage).not.toContainText('Stage responses only');
+    const shownUsage = await usage.textContent();
     await page.reload();
     await page.locator('.conversation-item').first().click();
     await expect(page.getByText('E2E_ANSWER_42: deterministic council response.', { exact: true }).first()).toBeVisible();
+    await expect(usage).toHaveText(shownUsage);
     await input.fill(`Clarify the previous answer ${router} ${mode}`);
     await page.getByRole('button', { name: 'Send follow-up', exact: true }).click();
     await expect(input).toBeEnabled();

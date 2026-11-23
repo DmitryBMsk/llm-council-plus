@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import ANY
+
 import pytest
 from starlette.testclient import TestClient
 
@@ -294,7 +296,8 @@ def test_non_stream_http_route_passes_stored_settings_and_title_router(
         "stage1": stage1_results,
         "stage2": None,
         "stage3": None,
-        "metadata": metadata,
+        # The route adds the run's usage summary; its content has its own test
+        "metadata": {**metadata, "provider_usage": ANY},
     }
 
     assert captured == {

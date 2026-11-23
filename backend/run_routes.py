@@ -203,6 +203,13 @@ def managed_run(*, streaming=False):
                                     request_id=ticket.request_id,
                                     provider_usage=get_provider_usage(),
                                 )
+                                # The route saves the message before the title call ends,
+                                # so the summary sent here is stored only now (#56).
+                                await run_in_threadpool(
+                                    storage.update_last_assistant_metadata,
+                                    conversation_id,
+                                    {"provider_usage": result["metadata"]["provider_usage"]},
+                                )
                                 await run_in_threadpool(ticket.complete, result, usage=get_provider_usage())
                                 event["metadata"] = result["metadata"]
                             yield _event(event, ticket)
