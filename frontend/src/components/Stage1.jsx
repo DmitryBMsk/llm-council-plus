@@ -19,7 +19,7 @@ const ERROR_MESSAGES = {
   unknown: 'Unknown error',
 };
 
-const Stage1 = memo(function Stage1({ responses, timings, isStreaming, onContinue, busy }) {
+const Stage1 = memo(function Stage1({ responses, timings, isStreaming, onContinue, onRetry, busy }) {
   const [activeTab, setActiveTab] = useState(0);
 
   if (!responses || responses.length === 0) {
@@ -83,6 +83,14 @@ const Stage1 = memo(function Stage1({ responses, timings, isStreaming, onContinu
             <div className="error-message">
               {currentResponse.error_message}
             </div>
+            {onRetry && (
+              <div className="rerun-control">
+                <button type="button" className="export-button" disabled={busy} onClick={() => onRetry(currentResponse.model)}>
+                  Retry model (additional paid request)
+                </button>
+                <p>Retry asks only this model and adds a separate answer. Rankings and synthesis are not rerun.</p>
+              </div>
+            )}
           </div>
         ) : (
           <div className="response-text markdown-content">
@@ -96,6 +104,7 @@ const Stage1 = memo(function Stage1({ responses, timings, isStreaming, onContinu
 
 Stage1.propTypes = {
   onContinue: PropTypes.func,
+  onRetry: PropTypes.func,
   busy: PropTypes.bool,
   responses: PropTypes.arrayOf(
     PropTypes.shape({

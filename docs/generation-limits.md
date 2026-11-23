@@ -120,3 +120,42 @@ the same request ID; confirmed failed/aborted runs require another deliberate cl
 with a new ID. Successful replay does not incur another provider call. Errors do
 not replace the original text. Higher limits and new continuations can increase
 OpenRouter's required in-flight credit reservation.
+
+## Explicit partial reruns
+
+Two more routes rerun one part of a stored council result. Both follow the
+continuation rules above: one browser click per attempt, the same `request_id`
+handling, an appended user/assistant pair, and an untouched source message. A
+failed rerun stores nothing. The new assistant message records what was rerun in
+`metadata.retry_of` (`message_index`, `stage`, `model`) and its spend in
+`metadata.provider_usage`.
+
+`POST /api/conversations/{id}/retry-model` asks one failed Stage 1 model again:
+
+```json
+{"message_index":1,"model":"anthropic/claude-fable-5.1","request_id":"00000000-0000-4000-8000-000000000002"}
+```
+
+The model must be an error row of that message's Stage 1. It receives the prompt
+of the original run (question, history, attachments, system prompt) with the
+stored search evidence; no search is repeated and memory context is not re-read.
+The new message holds a one-row `stage1`. The retried answer is not fed into a
+new ranking round or synthesis. The retry is a single provider request: a 429
+is reported as a failed rerun and is not resent with backoff.
+
+`POST /api/conversations/{id}/regenerate` reruns Stage 3 only:
+
+```json
+{"message_index":1,"chairman":"anthropic/claude-fable-5.1","request_id":"00000000-0000-4000-8000-000000000003"}
+```
+
+It synthesizes from the stored Stage 1 answers and Stage 2 rankings of the
+original council message, also when `message_index` points at an earlier
+regeneration or continuation. `chairman` is optional (default: the conversation's
+chairman) and must be one of the conversation's council models or its chairman.
+If the chairman fails, the existing chairman fallbacks run. The new message holds
+only `stage3`. The requested chairman is part of the idempotency digest: the same
+`request_id` with another chairman is rejected with `idempotency_conflict`.
+
+Both routes reject with 422 a rerun whose question with its stored document text
+exceeds 500,000 characters, the bound `/continue` applies to its context.

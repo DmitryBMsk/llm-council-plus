@@ -66,6 +66,66 @@ describe('Stage3 copy button', () => {
   });
 });
 
+describe('Stage3 regenerate control', () => {
+  const REGENERATE = 'Regenerate final answer (additional paid request)';
+  const answer = { model: 'c/chair', response: 'Final verdict' };
+  const options = ['c/chair', 'a/alpha', 'b/beta'];
+
+  it('regenerates with the current chairman unless another council model is chosen', () => {
+    const onRegenerate = vi.fn();
+    render(<Stage3 finalResponse={answer} onRegenerate={onRegenerate} chairmanOptions={options} />);
+    const select = screen.getByRole('combobox', { name: 'Chairman for the regenerated answer' });
+    expect([...select.options].map((option) => option.value)).toEqual(options);
+
+    fireEvent.click(screen.getByRole('button', { name: REGENERATE }));
+    fireEvent.change(select, { target: { value: 'b/beta' } });
+    fireEvent.click(screen.getByRole('button', { name: REGENERATE }));
+
+    expect(onRegenerate.mock.calls).toEqual([['c/chair'], ['b/beta']]);
+  });
+
+  it('is disabled while a run or continuation is busy', () => {
+    render(<Stage3 finalResponse={answer} onRegenerate={vi.fn()} chairmanOptions={options} busy />);
+
+    expect(screen.getByRole('button', { name: REGENERATE })).toBeDisabled();
+    expect(screen.getByRole('combobox')).toBeDisabled();
+  });
+
+  it('is offered when the synthesis failed', () => {
+    const onRegenerate = vi.fn();
+    render(<Stage3 finalResponse={{ model: 'c/chair', error: true, response: 'Error: failed' }} onRegenerate={onRegenerate} chairmanOptions={options} />);
+
+    fireEvent.click(screen.getByRole('button', { name: REGENERATE }));
+
+    expect(onRegenerate).toHaveBeenCalledWith('c/chair');
+  });
+
+  // '' stands for the backend's default chairman when the conversation stores none
+  it('offers the default chairman next to the council models', () => {
+    const onRegenerate = vi.fn();
+    render(<Stage3 finalResponse={answer} onRegenerate={onRegenerate} chairmanOptions={['', 'a/alpha', 'b/beta']} />);
+    const select = screen.getByRole('combobox', { name: 'Chairman for the regenerated answer' });
+    expect([...select.options].map((option) => option.textContent)).toEqual(['Default chairman', 'a/alpha', 'b/beta']);
+
+    fireEvent.click(screen.getByRole('button', { name: REGENERATE }));
+    fireEvent.change(select, { target: { value: 'b/beta' } });
+    fireEvent.click(screen.getByRole('button', { name: REGENERATE }));
+
+    expect(onRegenerate.mock.calls).toEqual([[undefined], ['b/beta']]);
+  });
+
+  // No stored chairman: no choice is shown and the backend uses its default
+  it('leaves the chairman to the backend when the conversation names none', () => {
+    const onRegenerate = vi.fn();
+    render(<Stage3 finalResponse={answer} onRegenerate={onRegenerate} />);
+
+    fireEvent.click(screen.getByRole('button', { name: REGENERATE }));
+
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(onRegenerate).toHaveBeenCalledWith(undefined);
+  });
+});
+
 describe('Stage3 failed synthesis', () => {
   it('is shown as an error, not as a chairman answer', () => {
     render(<Stage3 finalResponse={{

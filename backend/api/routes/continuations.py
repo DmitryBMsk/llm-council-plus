@@ -2,23 +2,33 @@
 
 import hashlib
 import json
-from typing import Annotated, Literal
+from types import SimpleNamespace
+from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path as ApiPath
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from ... import attachments, config, storage, router_dispatch, runtime_settings
-from ...council import _usage_fields, parse_ranking_from_text, build_context_prompt
+from ...council import (
+    _usage_fields,
+    parse_ranking_from_text,
+    build_context_prompt,
+    build_multimodal_messages,
+    reset_token_stats,
+    stage3_synthesize_final,
+)
 from ...search_results import tool_context
 from ...usage import get_provider_usage
 from ...run_context import active_ticket
 from ...run_routes import managed_run
 from ..deps import get_current_user, _ownership_username
+from .conversations import build_query_with_attachments
 
 router = APIRouter(tags=["conversations"])
 UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 _LIMIT_REASONS = {"length", "max_tokens", "max_output_tokens", "model_length"}
+MAX_RERUN_QUESTION_CHARS = 500_000  # same bound as the /continue context
 
 
 class ContinueResponseRequest(BaseModel):
@@ -32,11 +42,27 @@ def _fingerprint(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
-def _source(conversation, request):
+class RetryModelRequest(BaseModel):
+    message_index: int = Field(ge=0, strict=True)
+    model: str = Field(min_length=1, max_length=255)
+    request_id: str = Field(pattern=UUID_PATTERN)
+
+
+class RegenerateRequest(BaseModel):
+    message_index: int = Field(ge=0, strict=True)
+    chairman: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    request_id: str = Field(pattern=UUID_PATTERN)
+
+
+def _assistant_message(conversation, index):
     messages = conversation.get("messages", [])
-    if request.message_index >= len(messages) or messages[request.message_index].get("role") != "assistant":
+    if index >= len(messages) or messages[index].get("role") != "assistant":
         raise HTTPException(422, "Choose an existing assistant response")
-    message = messages[request.message_index]
+    return messages[index]
+
+
+def _source(conversation, request):
+    message = _assistant_message(conversation, request.message_index)
     rows = message.get(request.stage) or []
     rows = rows if isinstance(rows, list) else [rows]
     row = next((row for row in rows if row.get("model") == request.model), None)
@@ -55,9 +81,10 @@ def _source(conversation, request):
 
 
 def _root_source_index(conversation, index):
-    """Follow append-only continuation links to the original model response."""
+    """Follow append-only continuation and rerun links to the original council message."""
     while True:
-        parent = (conversation["messages"][index].get("metadata") or {}).get("continuation_of")
+        metadata = conversation["messages"][index].get("metadata") or {}
+        parent = metadata.get("continuation_of") or metadata.get("retry_of")
         if not parent:
             return index
         previous = parent.get("message_index")
@@ -66,12 +93,12 @@ def _root_source_index(conversation, index):
         index = previous
 
 
-def _provider_failure(message):
+def _provider_failure(message, code="continuation_failed"):
     ticket = active_ticket.get()
     return HTTPException(
         502,
         {
-            "code": "continuation_failed",
+            "code": code,
             "message": message,
             "status": "failed",
             "run_id": ticket.run_id if ticket else None,
@@ -91,6 +118,35 @@ def _original_question(conversation, index):
     return "Continue the selected response."
 
 
+def _original_run(conversation, index):
+    """Root council message, its user message and the question as that run sent it."""
+    root_index = _root_source_index(conversation, index)
+    for user_index in range(root_index - 1, -1, -1):
+        message = conversation["messages"][user_index]
+        if message.get("role") == "user":
+            files = [
+                SimpleNamespace(**attachment)
+                for attachment in message.get("attachments", [])
+                if attachment.get("file_type") != "image" and attachment.get("content")
+            ]
+            question = build_query_with_attachments(message.get("content", ""), files)
+            if len(question) > MAX_RERUN_QUESTION_CHARS:
+                raise HTTPException(422, "Rerun context is too large; ask a shorter focused follow-up")
+            return root_index, user_index, question
+    raise HTTPException(409, "Original question not found; reload the conversation")
+
+
+async def _original_images(conversation, root_index, router_type):
+    original_history = {**conversation, "messages": conversation["messages"][:root_index]}
+    try:
+        images = await run_in_threadpool(attachments.latest_images, original_history)
+    except (OSError, ValueError) as error:
+        raise HTTPException(409, "Original image unavailable; reattach it before continuing") from error
+    if images and router_type == "ollama":
+        raise HTTPException(400, "Ollama image continuation is not supported")
+    return images
+
+
 def _persist_pair(conversation_id, username, source_index, source_fingerprint, result, label):
     def update(conversation):
         if not storage._owner_matches(conversation.get("username"), username):
@@ -103,9 +159,8 @@ def _persist_pair(conversation_id, username, source_index, source_fingerprint, r
             or _fingerprint(conversation["messages"][source_index]) != source_fingerprint
         ):
             raise ValueError("Original response changed; reload before continuing")
-        conversation["messages"].append(
-            {"role": "user", "content": label, "continuation_of": result["metadata"]["continuation_of"]}
-        )
+        link = {key: result["metadata"][key] for key in ("continuation_of", "retry_of") if key in result["metadata"]}
+        conversation["messages"].append({"role": "user", "content": label, **link})
         assistant = {"role": "assistant", "metadata": result["metadata"]}
         assistant.update(
             {stage: result[stage] for stage in ("stage1", "stage2", "stage3") if result.get(stage) is not None}
@@ -151,15 +206,7 @@ async def continue_response(
     if len(question) + len(prefix) > 500_000:
         raise HTTPException(422, "Continuation context is too large; use a shorter focused follow-up")
     router_type = conversation.get("router_type") or config.ROUTER_TYPE
-    images = []
-    if request.stage == "stage1":
-        original_history = {**conversation, "messages": conversation["messages"][:root_index]}
-        try:
-            images = await run_in_threadpool(attachments.latest_images, original_history)
-        except (OSError, ValueError) as error:
-            raise HTTPException(409, "Original image unavailable; reattach it before continuing") from error
-        if images and router_type == "ollama":
-            raise HTTPException(400, "Ollama image continuation is not supported")
+    images = await _original_images(conversation, root_index, router_type) if request.stage == "stage1" else []
     messages = []
     if conversation.get("system_prompt"):
         messages.append({"role": "system", "content": conversation["system_prompt"]})
@@ -237,3 +284,130 @@ async def continue_response(
     except ValueError as error:
         raise HTTPException(409, str(error)) from error
     return result
+
+
+async def _store_rerun(conversation_id, ownership, request, source, stage, model, row, label):
+    result = {
+        "stage1": [],
+        "stage2": None,
+        "stage3": None,
+        "metadata": {
+            "retry_of": {"message_index": request.message_index, "stage": stage, "model": model},
+            "provider_usage": get_provider_usage(),
+        },
+    }
+    ticket = active_ticket.get()
+    if ticket is not None:
+        result["metadata"].update(run_id=ticket.run_id, request_id=ticket.request_id)
+    result[stage] = [row] if stage == "stage1" else row
+    try:
+        await run_in_threadpool(
+            _persist_pair, conversation_id, ownership, request.message_index, _fingerprint(source), result, label
+        )
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
+    return result
+
+
+@router.post("/api/conversations/{conversation_id}/retry-model")
+@managed_run()
+async def retry_model(
+    conversation_id: Annotated[str, ApiPath(pattern=UUID_PATTERN)],
+    request: RetryModelRequest,
+    current_user: str = Depends(get_current_user),
+):
+    """Ask one failed Stage 1 model again. No other model or stage is rerun."""
+    ownership = _ownership_username(current_user)
+    conversation = await run_in_threadpool(storage.get_conversation, conversation_id, username=ownership)
+    if conversation is None:
+        raise HTTPException(404, "Conversation not found")
+    source = _assistant_message(conversation, request.message_index)
+    failed = next((row for row in source.get("stage1") or [] if row.get("model") == request.model), None)
+    if failed is None:
+        raise HTTPException(404, "Selected model response not found")
+    if not failed.get("error"):
+        raise HTTPException(409, "This model did not fail in Stage 1")
+    root_index, user_index, question = _original_run(conversation, request.message_index)
+    router_type = conversation.get("router_type") or config.ROUTER_TYPE
+    images = await _original_images(conversation, root_index, router_type)
+    # Same prompt as the original Stage 1, with the stored search evidence in place
+    # of a new search. Memory context is not re-read: it now holds this very exchange.
+    messages = build_multimodal_messages(
+        question, images or None, conversation["messages"][:user_index], router_type=router_type
+    )
+    evidence = (conversation["messages"][root_index].get("metadata") or {}).get("tool_outputs")
+    if evidence:
+        messages.insert(0, {"role": "system", "content": tool_context(evidence)})
+    if conversation.get("system_prompt"):
+        messages.insert(0, {"role": "system", "content": conversation["system_prompt"]})
+    settings = await run_in_threadpool(runtime_settings.get_runtime_settings)
+    answer = await router_dispatch.query_model(
+        router_type,
+        model=request.model,
+        messages=messages,
+        stage="STAGE1",
+        temperature=settings.council_temperature,
+        retry_on_rate_limit=False,  # one click is one provider request; a 429 is reported instead
+    )
+    if not answer or answer.get("error"):
+        raise _provider_failure((answer or {}).get("error_message") or "Model retry failed", "rerun_failed")
+    if not answer.get("content") and not answer.get("truncated"):
+        raise _provider_failure("The model returned no text", "rerun_failed")
+    row = {"model": request.model, "response": answer.get("content") or "", **_usage_fields(answer)}
+    return await _store_rerun(
+        conversation_id,
+        ownership,
+        request,
+        source,
+        "stage1",
+        request.model,
+        row,
+        f"Retry {request.model} (stage1); other models, rankings and synthesis were not rerun.",
+    )
+
+
+@router.post("/api/conversations/{conversation_id}/regenerate")
+@managed_run()
+async def regenerate_final(
+    conversation_id: Annotated[str, ApiPath(pattern=UUID_PATTERN)],
+    request: RegenerateRequest,
+    current_user: str = Depends(get_current_user),
+):
+    """Rerun Stage 3 only, from the stored Stage 1 answers and Stage 2 rankings."""
+    ownership = _ownership_username(current_user)
+    conversation = await run_in_threadpool(storage.get_conversation, conversation_id, username=ownership)
+    if conversation is None:
+        raise HTTPException(404, "Conversation not found")
+    source = _assistant_message(conversation, request.message_index)
+    default = conversation.get("chairman") or config.CHAIRMAN_MODEL
+    chairman = request.chairman or default
+    if chairman not in {*(conversation.get("models") or config.COUNCIL_MODELS), default}:
+        raise HTTPException(422, "Choose a council model of this conversation or its chairman")
+    # A regenerated or continued answer holds no Stage 1/2 of its own: read the root's
+    root_index, _, question = _original_run(conversation, request.message_index)
+    root = conversation["messages"][root_index]
+    if not any(row.get("response") for row in root.get("stage1") or []):
+        raise HTTPException(409, "No Stage 1 answers to synthesize")
+    reset_token_stats()
+    final = await stage3_synthesize_final(
+        question,
+        root.get("stage1") or [],
+        root.get("stage2") or [],
+        chairman,
+        tool_outputs=(root.get("metadata") or {}).get("tool_outputs"),
+        router_type=conversation.get("router_type") or config.ROUTER_TYPE,
+    )
+    if final.get("error"):
+        raise _provider_failure(final.get("response") or "Final synthesis failed", "rerun_failed")
+    if not final.get("response") and not final.get("truncated"):
+        raise _provider_failure("The chairman returned no text", "rerun_failed")
+    return await _store_rerun(
+        conversation_id,
+        ownership,
+        request,
+        source,
+        "stage3",
+        chairman,
+        final,
+        f"Regenerate final answer with {chairman}; Stage 1 answers and Stage 2 rankings were not rerun.",
+    )

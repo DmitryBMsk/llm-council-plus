@@ -295,16 +295,22 @@ function App() {
     }
   };
 
-  const handleContinueResponse = async (messageIndex, stage, model) => {
+  // action: 'continue' a truncated answer, 'retry-model' a failed Stage 1 model,
+  // or 'regenerate' the final answer with `model` as chairman
+  const handleContinueResponse = async (messageIndex, stage, model, action = 'continue') => {
     const id = currentConversationIdRef.current;
     if (!id || currentConversation?.id !== id || continuationPendingRef.current || activeStreamingConvIdRef.current) return;
     continuationPendingRef.current = true;
     setContinuationBusy(true);
-    const key = JSON.stringify([id, messageIndex, stage, model]);
+    // A rerun keeps its id until its saved pair is on screen: the pair grows the message
+    // count, so the next click is a new request, while a failed refresh replays the stored one
+    const key = JSON.stringify([id, messageIndex, stage, model, action, action === 'continue' ? null : currentConversation.messages.length]);
     const requestId = continuationRequestIdsRef.current.get(key) || crypto.randomUUID();
     continuationRequestIdsRef.current.set(key, requestId);
+    const target = { continue: { stage, model }, 'retry-model': { model }, regenerate: { chairman: model } }[action];
+    const failure = action === 'continue' ? 'Continuation failed' : 'Rerun failed';
     try {
-      await api.continueResponse(id, { message_index: messageIndex, stage, model, request_id: requestId });
+      await api.continueResponse(id, { message_index: messageIndex, ...target, request_id: requestId }, action);
       // A retry uses the same id: a lost HTTP response must not charge twice.
       streamingStateRef.current.delete(id);
       if (id === currentConversationIdRef.current) await loadConversation(id);
@@ -312,9 +318,9 @@ function App() {
     } catch (error) {
       if (['failed', 'aborted'].includes(error.runStatus)) {
         continuationRequestIdsRef.current.delete(key);
-        addToast(`${error.message || 'Continuation failed'}. The next click starts a new paid request.`, 'error', 10000);
+        addToast(`${error.message || failure}. The next click starts a new paid request.`, 'error', 10000);
       } else {
-        addToast(error.message || 'Continuation failed');
+        addToast(error.message || failure);
       }
     } finally {
       continuationPendingRef.current = false;

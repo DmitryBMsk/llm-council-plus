@@ -32,12 +32,29 @@ async function copyText(text) {
   }
 }
 
-const Stage3 = memo(function Stage3({ finalResponse, timings, onContinue, busy }) {
+const Stage3 = memo(function Stage3({ finalResponse, timings, onContinue, onRegenerate, chairmanOptions = [], busy }) {
   const [copyState, setCopyState] = useState(null);
+  const [pickedChairman, setPickedChairman] = useState(null);
 
   if (!finalResponse) {
     return null;
   }
+
+  // The first option is the conversation's chairman, or '' for the backend's default one
+  const chairman = pickedChairman ?? chairmanOptions[0];
+  const regenerate = onRegenerate && (
+    <div className="rerun-control">
+      {chairmanOptions.length > 1 && (
+        <select aria-label="Chairman for the regenerated answer" value={chairman} disabled={busy} onChange={(event) => setPickedChairman(event.target.value)}>
+          {chairmanOptions.map((model) => <option key={model} value={model}>{model || 'Default chairman'}</option>)}
+        </select>
+      )}
+      <button type="button" className="export-button" disabled={busy} onClick={() => onRegenerate(chairman || undefined)}>
+        Regenerate final answer (additional paid request)
+      </button>
+      <p>Regeneration reruns only Stage 3 and adds a separate answer. Stage 1 answers and Stage 2 rankings are not rerun.</p>
+    </div>
+  );
 
   const copy = async () => {
     try {
@@ -76,6 +93,7 @@ const Stage3 = memo(function Stage3({ finalResponse, timings, onContinue, busy }
             <p>Fallbacks tried: {finalResponse.tried_fallbacks.map(shortName).join(', ')}</p>
           )}
           <p>Individual responses, where available, are shown below.</p>
+          {regenerate}
         </div>
       ) : (
         <div className="final-response">
@@ -94,6 +112,7 @@ const Stage3 = memo(function Stage3({ finalResponse, timings, onContinue, busy }
           <div className="final-text markdown-content">
             <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>{finalResponse.response}</ReactMarkdown>
           </div>
+          {regenerate}
         </div>
       )}
     </div>
@@ -102,6 +121,8 @@ const Stage3 = memo(function Stage3({ finalResponse, timings, onContinue, busy }
 
 Stage3.propTypes = {
   onContinue: PropTypes.func,
+  onRegenerate: PropTypes.func,
+  chairmanOptions: PropTypes.arrayOf(PropTypes.string),
   busy: PropTypes.bool,
   finalResponse: PropTypes.shape({
     model: PropTypes.string.isRequired,

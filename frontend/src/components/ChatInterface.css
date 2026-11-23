@@ -482,6 +482,34 @@
   transform: none;
 }
 
+/* Retry model (Stage 1) and regenerate final answer (Stage 3) */
+.rerun-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.error-content .rerun-control {
+  justify-content: center;
+}
+
+.rerun-control p {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.rerun-control select {
+  padding: 9px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  color: var(--text-primary);
+}
+
 /* Google Drive button styles */
 .export-actions {
   gap: 12px;
