@@ -298,6 +298,26 @@ describe('conversation selection races', () => {
   });
 });
 
+describe('mobile sidebar toggle', () => {
+  it('opens from the toggle and closes on Escape or on choosing a conversation', async () => {
+    await renderReadyApp();
+    const toggle = screen.getByRole('button', { name: 'Conversations' });
+    expect(toggle).toHaveAttribute('aria-controls', 'sidebar');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveFocus();
+
+    fireEvent.click(toggle);
+    await selectConversation('Conversation A', 'conv-a');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+});
+
 describe('interrupted responses', () => {
   it('preserves partial response after transport failure and navigation', async () => {
     const stream = setupPendingStream();

@@ -774,3 +774,49 @@
   color: var(--text-tertiary);
   pointer-events: none;
 }
+
+/* Below 768 px: the chat shares the column with the top bar, the composer wraps */
+@media (max-width: 767px) {
+  .chat-interface {
+    height: auto;
+    min-height: 0;
+  }
+
+  .messages-container {
+    padding: 16px 12px;
+  }
+
+  /* The no-conversation welcome sits outside .messages-container and has no padding of its own */
+  .empty-state {
+    padding: 0 16px;
+  }
+
+  .input-form {
+    padding: 10px 12px;
+  }
+
+  .input-row {
+    flex-wrap: wrap;
+  }
+
+  /* Textarea on its own row; attach, web search, Send and Stop on the second */
+  .message-input {
+    order: -1;
+    flex: 1 0 100%;
+  }
+
+  .send-button {
+    order: 1;
+    margin-left: auto;
+  }
+
+  .stop-button {
+    order: 2;
+    margin-left: auto;
+  }
+
+  /* Send is disabled while Stop is shown; together they push Stop onto a third row at 360 px */
+  .input-row:has(.stop-button) .send-button {
+    display: none;
+  }
+}

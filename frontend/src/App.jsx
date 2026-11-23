@@ -22,6 +22,8 @@ function App() {
   const continuationRequestIdsRef = useRef(new Map());
   const [showModelSelector, setShowModelSelector] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false); // only visible below 768 px
+  const sidebarToggleRef = useRef(null);
   const [driveStatus, setDriveStatus] = useState({ enabled: false, configured: false });
   const [authChecked, setAuthChecked] = useState(false);
   const [authEnabled, setAuthEnabled] = useState(true);
@@ -181,7 +183,34 @@ function App() {
     };
   }, [isAuthenticated]);
 
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+
+  // Focus returns to the toggle after the render that lifts `inert` from it
+  const sidebarWasOpenRef = useRef(false);
+  useEffect(() => {
+    if (sidebarWasOpenRef.current && !sidebarOpen) sidebarToggleRef.current?.focus();
+    sidebarWasOpenRef.current = sidebarOpen;
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    if (!sidebarOpen) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') closeSidebar();
+    };
+    // At 768 px and above there is no drawer, and the chat must not stay inert
+    const onResize = () => {
+      if (window.innerWidth >= 768) closeSidebar();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', onResize);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [sidebarOpen, closeSidebar]);
+
   const handleNewConversation = () => {
+    closeSidebar();
     // Show model selector modal instead of creating directly
     setShowModelSelector(true);
   };
@@ -209,6 +238,7 @@ function App() {
   };
 
   const handleSelectConversation = (id) => {
+    closeSidebar();
     currentConversationIdRef.current = id;
     conversationLoadVersionRef.current += 1;
     setCurrentConversation(null);
@@ -699,28 +729,52 @@ function App() {
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
-        onOpenSettings={() => setShowSettings(true)}
+        onOpenSettings={() => {
+          closeSidebar();
+          setShowSettings(true);
+        }}
         onDeleteConversation={handleDeleteConversation}
         onDeleteAllConversations={handleDeleteAllConversations}
         onUpdateTitle={handleUpdateTitle}
+        isOpen={sidebarOpen}
       />
-      <ErrorBoundary>
-        <ChatInterface
-          conversation={currentConversation}
-          onSendMessage={handleSendMessage}
-          onContinueResponse={handleContinueResponse}
-          continuationBusy={continuationBusy}
-          onAbort={continuationBusy ? undefined : handleAbortStream}
-          onUploadFile={api.uploadFile}
-          isLoading={isLoading || continuationBusy}
-          webSearchAvailable={webSearchAvailable}
-          tavilyEnabled={tavilyEnabled}
-          exaEnabled={exaEnabled}
-          duckduckgoEnabled={duckduckgoEnabled}
-          braveEnabled={braveEnabled}
-          addToast={addToast}
-        />
-      </ErrorBoundary>
+      {sidebarOpen && <div className="sidebar-backdrop" onClick={closeSidebar} />}
+      {/* display: contents; inert keeps Tab inside the open drawer instead of the covered chat */}
+      <div className="app-main" inert={sidebarOpen}>
+        <div className="mobile-topbar">
+          <button
+            ref={sidebarToggleRef}
+            type="button"
+            className="sidebar-toggle"
+            aria-label="Conversations"
+            aria-expanded={sidebarOpen}
+            aria-controls="sidebar"
+            onClick={() => setSidebarOpen((open) => !open)}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M3 6h18M3 12h18M3 18h18" />
+            </svg>
+          </button>
+          <span className="mobile-topbar-title">LLM Council Plus</span>
+        </div>
+        <ErrorBoundary>
+          <ChatInterface
+            conversation={currentConversation}
+            onSendMessage={handleSendMessage}
+            onContinueResponse={handleContinueResponse}
+            continuationBusy={continuationBusy}
+            onAbort={continuationBusy ? undefined : handleAbortStream}
+            onUploadFile={api.uploadFile}
+            isLoading={isLoading || continuationBusy}
+            webSearchAvailable={webSearchAvailable}
+            tavilyEnabled={tavilyEnabled}
+            exaEnabled={exaEnabled}
+            duckduckgoEnabled={duckduckgoEnabled}
+            braveEnabled={braveEnabled}
+            addToast={addToast}
+          />
+        </ErrorBoundary>
+      </div>
       <ModelSelector
         isOpen={showModelSelector}
         onClose={() => setShowModelSelector(false)}

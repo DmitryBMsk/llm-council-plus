@@ -213,3 +213,11 @@
 .final-error p {
   margin: 8px 0 0;
 }
+
+/* Below 768 px the timing badges flow above the title instead of covering it */
+@media (max-width: 767px) {
+  .stage3 .stage-timing-top-right {
+    position: static;
+    margin-bottom: 12px;
+  }
+}

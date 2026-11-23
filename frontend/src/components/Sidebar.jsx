@@ -15,6 +15,7 @@ export default function Sidebar({
   onDeleteConversation,
   onDeleteAllConversations,
   onUpdateTitle,
+  isOpen,
 }) {
   const [deletingIds, setDeletingIds] = useState(new Set());
   const [version, setVersion] = useState('');
@@ -27,6 +28,13 @@ export default function Sidebar({
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
   const menuButtonRefs = useRef({});
   const searchInputRef = useRef(null);
+  const sidebarRef = useRef(null);
+
+  // The off-canvas drawer (below 768 px) takes focus when it opens. The container, not a
+  // button: the buttons' `transition: all` keeps them unfocusable (visibility: hidden) for a frame.
+  useEffect(() => {
+    if (isOpen) sidebarRef.current?.focus();
+  }, [isOpen]);
 
   // Auth state
   const { username, logout, isAuthenticated } = useAuthStore();
@@ -83,6 +91,7 @@ export default function Sidebar({
     if (e.key === 'Enter') {
       handleSaveEdit(conversationId);
     } else if (e.key === 'Escape') {
+      e.stopPropagation(); // cancel the rename only, keep the mobile drawer open
       setEditingId(null);
     }
   };
@@ -105,15 +114,26 @@ export default function Sidebar({
     }
   };
 
-  // Close menu when clicking outside
+  // Close menu when clicking outside, on Escape and on resize: the menu is portalled to
+  // <body>, so it would outlive the mobile drawer that Escape or a narrower window hides
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (menuOpenId && !e.target.closest('.menu-dropdown-portal') && !e.target.closest('.menu-btn')) {
         setMenuOpenId(null);
       }
     };
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') setMenuOpenId(null);
+    };
+    const handleResize = () => setMenuOpenId(null);
     document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    window.addEventListener('resize', handleResize);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('resize', handleResize);
+    };
   }, [menuOpenId]);
 
   const handleDeleteClick = async (id, e) => {
@@ -153,7 +173,13 @@ export default function Sidebar({
   };
 
   return (
-    <div className="sidebar">
+    <nav
+      ref={sidebarRef}
+      className={`sidebar${isOpen ? ' sidebar--open' : ''}`}
+      id="sidebar"
+      aria-label="Conversations"
+      tabIndex={-1}
+    >
       <div className="sidebar-header">
         <div className="sidebar-title-row">
           <svg width="32" height="32" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" className="sidebar-logo-svg">
@@ -354,7 +380,7 @@ export default function Sidebar({
           )}
         </div>
       </div>
-    </div>
+    </nav>
   );
 }
 
@@ -375,9 +401,11 @@ Sidebar.propTypes = {
   onDeleteConversation: PropTypes.func.isRequired,
   onDeleteAllConversations: PropTypes.func.isRequired,
   onUpdateTitle: PropTypes.func,
+  isOpen: PropTypes.bool,
 };
 
 Sidebar.defaultProps = {
   currentConversationId: null,
   onUpdateTitle: null,
+  isOpen: false,
 };

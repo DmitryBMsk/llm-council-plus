@@ -272,3 +272,11 @@ body {
 .retry-button:hover {
   background: var(--accent-blue);
 }
+
+/* Below 768 px a wide table scrolls inside the answer instead of being cut off */
+@media (max-width: 767px) {
+  .markdown-content table {
+    display: block;
+    overflow-x: auto;
+  }
+}

@@ -208,3 +208,15 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* Below 768 px the tabs scroll sideways instead of being cut off */
+@media (max-width: 767px) {
+  .settings-tabs {
+    overflow-x: auto;
+    flex-shrink: 0; /* a scroll container may shrink below its content in the modal column */
+  }
+
+  .settings-tab {
+    flex-shrink: 0;
+  }
+}
