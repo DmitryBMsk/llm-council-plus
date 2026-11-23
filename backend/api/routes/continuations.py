@@ -28,6 +28,7 @@ from .conversations import build_query_with_attachments
 router = APIRouter(tags=["conversations"])
 UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 _LIMIT_REASONS = {"length", "max_tokens", "max_output_tokens", "model_length"}
+MAX_RERUN_QUESTION_CHARS = 500_000  # same bound as the /continue context
 
 
 class ContinueResponseRequest(BaseModel):
@@ -42,13 +43,13 @@ def _fingerprint(value):
 
 
 class RetryModelRequest(BaseModel):
-    message_index: int = Field(ge=0)
+    message_index: int = Field(ge=0, strict=True)
     model: str = Field(min_length=1, max_length=255)
     request_id: str = Field(pattern=UUID_PATTERN)
 
 
 class RegenerateRequest(BaseModel):
-    message_index: int = Field(ge=0)
+    message_index: int = Field(ge=0, strict=True)
     chairman: Optional[str] = Field(default=None, min_length=1, max_length=255)
     request_id: str = Field(pattern=UUID_PATTERN)
 
@@ -128,7 +129,10 @@ def _original_run(conversation, index):
                 for attachment in message.get("attachments", [])
                 if attachment.get("file_type") != "image" and attachment.get("content")
             ]
-            return root_index, user_index, build_query_with_attachments(message.get("content", ""), files)
+            question = build_query_with_attachments(message.get("content", ""), files)
+            if len(question) > MAX_RERUN_QUESTION_CHARS:
+                raise HTTPException(422, "Rerun context is too large; ask a shorter focused follow-up")
+            return root_index, user_index, question
     raise HTTPException(409, "Original question not found; reload the conversation")
 
 
@@ -338,7 +342,12 @@ async def retry_model(
         messages.insert(0, {"role": "system", "content": conversation["system_prompt"]})
     settings = await run_in_threadpool(runtime_settings.get_runtime_settings)
     answer = await router_dispatch.query_model(
-        router_type, model=request.model, messages=messages, stage="STAGE1", temperature=settings.council_temperature
+        router_type,
+        model=request.model,
+        messages=messages,
+        stage="STAGE1",
+        temperature=settings.council_temperature,
+        retry_on_rate_limit=False,  # one click is one provider request; a 429 is reported instead
     )
     if not answer or answer.get("error"):
         raise _provider_failure((answer or {}).get("error_message") or "Model retry failed", "rerun_failed")

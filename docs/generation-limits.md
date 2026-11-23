@@ -140,8 +140,8 @@ The model must be an error row of that message's Stage 1. It receives the prompt
 of the original run (question, history, attachments, system prompt) with the
 stored search evidence; no search is repeated and memory context is not re-read.
 The new message holds a one-row `stage1`. The retried answer is not fed into a
-new ranking round or synthesis. A 429 from the provider is still resent with
-backoff, as in every Stage 1 request.
+new ranking round or synthesis. The retry is a single provider request: a 429
+is reported as a failed rerun and is not resent with backoff.
 
 `POST /api/conversations/{id}/regenerate` reruns Stage 3 only:
 
@@ -154,4 +154,8 @@ original council message, also when `message_index` points at an earlier
 regeneration or continuation. `chairman` is optional (default: the conversation's
 chairman) and must be one of the conversation's council models or its chairman.
 If the chairman fails, the existing chairman fallbacks run. The new message holds
-only `stage3`.
+only `stage3`. The requested chairman is part of the idempotency digest: the same
+`request_id` with another chairman is rejected with `idempotency_conflict`.
+
+Both routes reject with 422 a rerun whose question with its stored document text
+exceeds 500,000 characters, the bound `/continue` applies to its context.

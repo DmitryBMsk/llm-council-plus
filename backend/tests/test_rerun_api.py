@@ -64,6 +64,8 @@ def test_retry_asks_only_the_failed_model_and_keeps_the_source_message(context):
     assert query.await_count == 1
     assert query.call_args.kwargs["model"] == ALPHA
     assert query.call_args.kwargs["stage"] == "STAGE1"
+    # One click is one provider request: a 429 is reported, not resent with backoff
+    assert query.call_args.kwargs["retry_on_rate_limit"] is False
     prompt = query.call_args.kwargs["messages"]
     assert prompt[0] == {"role": "system", "content": "Original policy"}
     assert "Explain the original topic" in str(prompt)
@@ -135,7 +137,9 @@ def test_regenerate_defaults_to_the_conversation_chairman(context):
         ("retry-model", {"message_index": 9}, 422),  # no such message
         ("retry-model", {"model": BETA}, 409),  # answered, did not fail
         ("retry-model", {"model": "x/unknown"}, 404),
+        ("retry-model", {"message_index": True}, 422),  # JSON true must not be read as index 1
         ("regenerate", {"message_index": 0}, 422),
+        ("regenerate", {"message_index": True}, 422),
         ("regenerate", {"chairman": "x/outsider"}, 422),
     ],
 )
@@ -207,3 +211,35 @@ def test_truncated_retry_is_continued_with_the_original_question(context):
     assert continued.status_code == 200, continued.text
     assert "Explain the original topic" in str(query.call_args.kwargs["messages"])
     assert messages_of(cid)[5]["stage1"][0]["response"] == "Fresh answer"
+
+
+def test_request_id_reused_with_another_chairman_is_a_conflict_not_a_replay(context):
+    client, cid, query = context
+    body = {"message_index": 1, "chairman": BETA, "request_id": str(uuid4())}
+    assert client.post(f"/api/conversations/{cid}/regenerate", json=body).status_code == 200
+
+    other = client.post(f"/api/conversations/{cid}/regenerate", json={**body, "chairman": CHAIR})
+
+    assert other.status_code == 409, other.text
+    assert other.json()["detail"]["code"] == "idempotency_conflict"
+    assert query.await_count == 1
+    assert len(messages_of(cid)) == 4
+
+
+@pytest.mark.parametrize("route,extra", [("retry-model", {"model": ALPHA}), ("regenerate", {})])
+def test_oversized_rerun_context_is_rejected_without_calling_a_provider(context, route, extra):
+    client, cid, query = context
+    storage._json_update_conversation(
+        cid,
+        lambda c: c["messages"][0].update(
+            attachments=[{"file_type": "txt", "filename": "big.txt", "content": "x" * 500_001}]
+        ),
+    )
+
+    response = client.post(
+        f"/api/conversations/{cid}/{route}", json={"message_index": 1, "request_id": str(uuid4()), **extra}
+    )
+
+    assert response.status_code == 422, response.text
+    assert query.await_count == 0
+    assert len(messages_of(cid)) == 2
