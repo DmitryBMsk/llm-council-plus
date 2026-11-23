@@ -360,12 +360,21 @@ describe('partial reruns', () => {
     await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
   };
 
-  it('sends every regeneration click after a success as a new paid request', async () => {
+  it('sends a new paid request once the previous regeneration is on screen', async () => {
+    // Each stored rerun appends a user + assistant pair to the conversation
     api.continueResponse.mockResolvedValue({});
+    api.getConversation.mockImplementation(async (id) => {
+      const conversation = cloneConversation(id);
+      api.continueResponse.mock.calls.forEach(() => conversation.messages.push(
+        { role: 'user', content: 'Regenerate' }, { role: 'assistant', stage3: { response: 'Again' } },
+      ));
+      return conversation;
+    });
     await renderReadyApp();
     await selectConversation('Conversation B', 'conv-b');
 
     await regenerate(1);
+    await waitFor(() => expect(screen.getByTestId('message-count')).toHaveTextContent('4'));
     await regenerate(2);
 
     const [first, second] = api.continueResponse.mock.calls;
@@ -385,5 +394,25 @@ describe('partial reruns', () => {
     const [first, second] = api.continueResponse.mock.calls;
     expect(second[1].request_id).toBe(first[1].request_id);
     expect(screen.getByTestId('toasts')).toHaveTextContent('Network down');
+  });
+});
+
+describe('partial rerun recovery', () => {
+  // The POST was stored and billed, but the chat still shows the old state: the next
+  // click must replay that result on the server, not start a second paid run
+  it('keeps the request id when the chat could not be refreshed after a rerun', async () => {
+    api.continueResponse.mockResolvedValue({});
+    await renderReadyApp();
+    await selectConversation('Conversation B', 'conv-b');
+    api.getConversation.mockRejectedValueOnce(new Error('offline'));
+
+    for (const times of [1, 2]) {
+      fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }));
+      await waitFor(() => expect(api.continueResponse).toHaveBeenCalledTimes(times));
+      await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
+    }
+
+    const [first, second] = api.continueResponse.mock.calls;
+    expect(second[1].request_id).toBe(first[1].request_id);
   });
 });

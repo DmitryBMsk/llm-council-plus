@@ -242,6 +242,17 @@ describe('partial reruns', () => {
     ]);
   });
 
+  it('offers the council models when the conversation stores no chairman', () => {
+    const onContinueResponse = vi.fn();
+    const { getByRole } = render(<ChatInterface conversation={{ ...conversation(failed), chairman: null }} onContinueResponse={onContinueResponse} />);
+    const select = getByRole('combobox', { name: 'Chairman for the regenerated answer' });
+    expect([...select.options].map((option) => option.value)).toEqual(['', 'a/alpha', 'b/beta']);
+
+    fireEvent.click(getByRole('button', { name: 'Regenerate final answer (additional paid request)' }));
+
+    expect(onContinueResponse).toHaveBeenCalledWith(1, 'stage3', undefined, 'regenerate');
+  });
+
   it('disables both controls while a continuation is busy', () => {
     const { getByRole } = render(<ChatInterface conversation={conversation(failed)} onContinueResponse={vi.fn()} continuationBusy />);
 
@@ -255,7 +266,8 @@ describe('partial reruns', () => {
       { role: 'user', content: 'Retry a/alpha' },
       { role: 'assistant', stage1: [{ model: 'a/alpha', response: 'Alpha retried' }], metadata: { retry_of: { message_index: 1, stage: 'stage1', model: 'a/alpha' } } },
       { role: 'user', content: 'Regenerate' },
-      { role: 'assistant', stage1: [], stage3: { model: 'b/beta', response: 'Second verdict' }, metadata: { retry_of: { message_index: 1, stage: 'stage3', model: 'b/beta' } } },
+      // The requested chairman failed and a fallback answered: the line names who answered
+      { role: 'assistant', stage1: [], stage3: { model: 'b/beta', response: 'Second verdict', fallback_used: true }, metadata: { retry_of: { message_index: 1, stage: 'stage3', model: 'c/chair' } } },
     )} />);
 
     expect(getByText('Retry of a/alpha. Other models, rankings and synthesis were not rerun.')).toHaveAttribute('role', 'status');

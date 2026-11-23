@@ -302,7 +302,9 @@ function App() {
     if (!id || currentConversation?.id !== id || continuationPendingRef.current || activeStreamingConvIdRef.current) return;
     continuationPendingRef.current = true;
     setContinuationBusy(true);
-    const key = JSON.stringify([id, messageIndex, stage, model, action]);
+    // A rerun keeps its id until its saved pair is on screen: the pair grows the message
+    // count, so the next click is a new request, while a failed refresh replays the stored one
+    const key = JSON.stringify([id, messageIndex, stage, model, action, action === 'continue' ? null : currentConversation.messages.length]);
     const requestId = continuationRequestIdsRef.current.get(key) || crypto.randomUUID();
     continuationRequestIdsRef.current.set(key, requestId);
     const target = { continue: { stage, model }, 'retry-model': { model }, regenerate: { chairman: model } }[action];
@@ -310,8 +312,6 @@ function App() {
     try {
       await api.continueResponse(id, { message_index: messageIndex, ...target, request_id: requestId }, action);
       // A retry uses the same id: a lost HTTP response must not charge twice.
-      // A confirmed rerun gives the id up, so the next click regenerates again instead of replaying.
-      if (action !== 'continue') continuationRequestIdsRef.current.delete(key);
       streamingStateRef.current.delete(id);
       if (id === currentConversationIdRef.current) await loadConversation(id);
       await loadConversations();

@@ -100,6 +100,20 @@ describe('Stage3 regenerate control', () => {
     expect(onRegenerate).toHaveBeenCalledWith('c/chair');
   });
 
+  // '' stands for the backend's default chairman when the conversation stores none
+  it('offers the default chairman next to the council models', () => {
+    const onRegenerate = vi.fn();
+    render(<Stage3 finalResponse={answer} onRegenerate={onRegenerate} chairmanOptions={['', 'a/alpha', 'b/beta']} />);
+    const select = screen.getByRole('combobox', { name: 'Chairman for the regenerated answer' });
+    expect([...select.options].map((option) => option.textContent)).toEqual(['Default chairman', 'a/alpha', 'b/beta']);
+
+    fireEvent.click(screen.getByRole('button', { name: REGENERATE }));
+    fireEvent.change(select, { target: { value: 'b/beta' } });
+    fireEvent.click(screen.getByRole('button', { name: REGENERATE }));
+
+    expect(onRegenerate.mock.calls).toEqual([[undefined], ['b/beta']]);
+  });
+
   // No stored chairman: no choice is shown and the backend uses its default
   it('leaves the chairman to the backend when the conversation names none', () => {
     const onRegenerate = vi.fn();

@@ -401,14 +401,15 @@ export default function ChatInterface({
                   {msg.metadata?.continuation_of && <p role="status">Continuation from {msg.metadata.continuation_of.model}. Previous rankings and synthesis were not rerun.</p>}
                   {msg.metadata?.retry_of && <p role="status">{msg.metadata.retry_of.stage === 'stage1'
                     ? `Retry of ${msg.metadata.retry_of.model}. Other models, rankings and synthesis were not rerun.`
-                    : `Final answer regenerated with ${msg.metadata.retry_of.model}. Stage 1 answers and Stage 2 rankings were not rerun.`}</p>}
+                    // retry_of.model is the requested chairman; a fallback may have answered instead
+                    : `Final answer regenerated with ${msg.stage3?.model || msg.metadata.retry_of.model}. Stage 1 answers and Stage 2 rankings were not rerun.`}</p>}
                   <SearchContext toolOutputs={msg.metadata?.tool_outputs || msg.tool_outputs} />
 
                   {/* Final answer first; the stages that produced it collapse below it */}
                   {msg.stage3 && <Stage3 busy={isLoading || continuationBusy} onContinue={onContinueResponse ? model => onContinueResponse(index, 'stage3', model) : undefined}
                     onRegenerate={onContinueResponse ? chairman => onContinueResponse(index, 'stage3', chairman, 'regenerate') : undefined}
-                    // Without a stored chairman no choice is offered: the backend then uses its default
-                    chairmanOptions={conversation.chairman ? [...new Set([conversation.chairman, ...(conversation.models || [])])] : []}
+                    // '' is the backend's default chairman, offered when the conversation stores none
+                    chairmanOptions={[...new Set([conversation.chairman || '', ...(conversation.models || [])])]}
                     finalResponse={msg.stage3} timings={msg.timings?.stage3} />}
 
                   {/* Always the same <details> so Stage 1/2 keep their tab state when the answer

@@ -40,16 +40,16 @@ const Stage3 = memo(function Stage3({ finalResponse, timings, onContinue, onRege
     return null;
   }
 
-  // The first option is the conversation's chairman; with no options the backend picks its default
+  // The first option is the conversation's chairman, or '' for the backend's default one
   const chairman = pickedChairman ?? chairmanOptions[0];
   const regenerate = onRegenerate && (
     <div className="rerun-control">
       {chairmanOptions.length > 1 && (
         <select aria-label="Chairman for the regenerated answer" value={chairman} disabled={busy} onChange={(event) => setPickedChairman(event.target.value)}>
-          {chairmanOptions.map((model) => <option key={model} value={model}>{model}</option>)}
+          {chairmanOptions.map((model) => <option key={model} value={model}>{model || 'Default chairman'}</option>)}
         </select>
       )}
-      <button type="button" className="export-button" disabled={busy} onClick={() => onRegenerate(chairman)}>
+      <button type="button" className="export-button" disabled={busy} onClick={() => onRegenerate(chairman || undefined)}>
         Regenerate final answer (additional paid request)
       </button>
       <p>Regeneration reruns only Stage 3 and adds a separate answer. Stage 1 answers and Stage 2 rankings are not rerun.</p>
