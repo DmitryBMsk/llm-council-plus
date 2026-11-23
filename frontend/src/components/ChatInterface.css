@@ -812,5 +812,11 @@
 
   .stop-button {
     order: 2;
+    margin-left: auto;
+  }
+
+  /* Send is disabled while Stop is shown; together they push Stop onto a third row at 360 px */
+  .input-row:has(.stop-button) .send-button {
+    display: none;
   }
 }

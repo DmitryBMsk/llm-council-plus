@@ -32,6 +32,7 @@ test.describe('phone viewport', () => {
       await toggle.click();
       await expect(sidebar).toBeInViewport({ ratio: 1 });
       await expect(sidebar).toBeFocused();
+      await expect(page.locator('.app-main')).toHaveAttribute('inert', ''); // Tab stays out of the covered chat
       await page.keyboard.press('Escape');
       await expect(sidebar).toBeHidden();
       await expect(toggle).toBeFocused();
@@ -77,7 +78,18 @@ test.describe('phone viewport', () => {
       expect(tabRows, 'Stage 1 tabs wrapped into several rows at 320px').toBe(1);
       expect(await cutOff(page, '.chat-interface'), 'answer and composer at 320px').toEqual([]);
 
+      // Mid-request at 360 px: Stop joins the action row instead of dropping onto a third one
       await page.setViewportSize({ width: 360, height: 844 });
+      await page.route('**/message/stream', () => {}); // never answered: the request stays in flight
+      await input.fill('A request that stays in flight');
+      await send.click();
+      await expect(page.locator('.stop-button')).toBeVisible();
+      const actionRows = await page.locator('.attach-button, .stop-button').evaluateAll(buttons =>
+        new Set(buttons.map(button => Math.round(button.getBoundingClientRect().top))).size);
+      expect(actionRows, 'Stop left the action row at 360px').toBe(1);
+      expect(await cutOff(page, '.chat-interface'), 'composer during a request at 360px').toEqual([]);
+      await page.unrouteAll({ behavior: 'ignoreErrors' });
+
       await page.reload();
       await expect(toggle).toBeVisible();
       expect(await cutOff(page, '.chat-interface'), 'empty state at 360px').toEqual([]);
