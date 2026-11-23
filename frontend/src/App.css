@@ -23,6 +23,11 @@
   transition: none !important;
 }
 
+/* Groups the top bar and the chat so both go inert under the open drawer; adds no box */
+.app-main {
+  display: contents;
+}
+
 /* Mobile chrome: hidden at 768 px and above */
 .mobile-topbar,
 .sidebar-backdrop {
