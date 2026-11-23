@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from backend import config, council, router_dispatch, runtime_settings, storage
+from backend import config, council, router_dispatch, run_routes, runtime_settings, storage
 from backend.main import app
 from backend.runtime_settings import RuntimeSettings
 
@@ -205,13 +205,13 @@ def test_interrupted_stream_keeps_the_prompt_with_its_partial_answers(run, monke
     assert metadata["stage1_prompt"]["text"] == "ORIGINAL TEMPLATE\nExplain the topic"
 
 
-def test_client_disconnect_during_stage2_keeps_the_prompt_with_its_partial_answers(run, monkeypatch):
-    async def stage2_hangs(*args, **kwargs):
-        await asyncio.Event().wait()
+def stream_until_disconnect(run, body, event=None, nth=1, stall=False, gone=None):
+    """POST /message/stream over raw ASGI and disconnect once the nth `event` is sent.
 
-    monkeypatch.setattr("backend.api.routes.conversations.stage2_collect_rankings", stage2_hangs)
-    run.cid = new_conversation("full")
-    body = json.dumps({"content": "Explain the topic", "request_id": str(uuid4())}).encode()
+    stall=True keeps that send blocked, as on a stalled socket, so the disconnect lands mid-send.
+    A caller that passes its own `gone` event may also set it to disconnect.
+    """
+    raw = json.dumps(body).encode()
     path = f"/api/conversations/{run.cid}/message/stream"
     # ASGI before 2.4: Starlette cancels the response task when the client disconnects
     scope = {
@@ -229,28 +229,86 @@ def test_client_disconnect_during_stage2_keeps_the_prompt_with_its_partial_answe
         "headers": [
             (b"host", b"testserver"),
             (b"content-type", b"application/json"),
-            (b"content-length", str(len(body)).encode()),
+            (b"content-length", str(len(raw)).encode()),
         ],
     }
 
-    async def disconnect_once_stage2_starts():
-        stage2_started = asyncio.Event()
-        request = [{"type": "http.request", "body": body, "more_body": False}]
+    gone = gone or asyncio.Event()
+
+    async def disconnect():
+        request = [{"type": "http.request", "body": raw, "more_body": False}]
+        seen = 0
 
         async def receive():
             if request:
                 return request.pop()
-            await stage2_started.wait()
+            await gone.wait()
             return {"type": "http.disconnect"}
 
         async def send(message):
-            if b"stage2_start" in message.get("body", b""):
-                stage2_started.set()
+            nonlocal seen
+            if event and f'"type": "{event}"'.encode() in message.get("body", b""):
+                seen += 1
+                if seen == nth:
+                    gone.set()
+                    if stall:
+                        await asyncio.Event().wait()
 
         await asyncio.wait_for(app(scope, receive, send), timeout=10)
 
-    asyncio.run(disconnect_once_stage2_starts())
+    asyncio.run(disconnect())
+
+
+def test_client_disconnect_during_stage2_keeps_the_prompt_with_its_partial_answers(run, monkeypatch):
+    async def stage2_hangs(*args, **kwargs):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr("backend.api.routes.conversations.stage2_collect_rankings", stage2_hangs)
+    run.cid = new_conversation("full")
+
+    stream_until_disconnect(run, {"content": "Explain the topic", "request_id": str(uuid4())}, "stage2_start")
 
     metadata = stored_metadata(run)
     assert metadata["partial"] is True
     assert metadata["stage1_prompt"]["text"] == "ORIGINAL TEMPLATE\nExplain the topic"
+
+
+@pytest.mark.parametrize("sent", [1, 2])
+def test_stage1_answer_being_sent_on_disconnect_is_saved_like_its_replay(run, sent):
+    body = {"content": "Explain the topic", "request_id": str(uuid4())}
+
+    stream_until_disconnect(run, body, "stage1_model_response", nth=sent, stall=True)
+    replay = run.client.post(f"/api/conversations/{run.cid}/message/stream", json=body)
+
+    saved = storage.get_conversation(run.cid)["messages"][1]
+    assert [row["model"] for row in saved["stage1"]] == [ALPHA, BETA][:sent]
+    assert saved["metadata"]["partial"] is True
+    assert saved["metadata"]["stage1_prompt"]["text"] == "ORIGINAL TEMPLATE\nExplain the topic"
+    events = [json.loads(line[6:]) for line in replay.text.splitlines() if line.startswith("data: ")]
+    replayed = next(event["data"] for event in events if event["type"] == "stage1_complete")
+    assert [row["model"] for row in replayed] == [ALPHA, BETA][:sent]
+
+
+def test_answer_waiting_for_the_lease_check_on_disconnect_is_saved_like_its_replay(run, monkeypatch):
+    gone, lease_checks = asyncio.Event(), []
+    run_in_threadpool = run_routes.run_in_threadpool
+
+    async def busy_thread_pool(func, *args, **kwargs):
+        # Fault injection: no free thread for the lease check that holds the second answer
+        if getattr(func, "__name__", None) == "ensure_active":
+            lease_checks.append(func)
+            if len(lease_checks) == 3:  # stage1_start and alpha went out; beta waits here
+                gone.set()
+                await asyncio.Event().wait()
+        return await run_in_threadpool(func, *args, **kwargs)
+
+    monkeypatch.setattr(run_routes, "run_in_threadpool", busy_thread_pool)
+    body = {"content": "Explain the topic", "request_id": str(uuid4())}
+
+    stream_until_disconnect(run, body, gone=gone)
+    replay = run.client.post(f"/api/conversations/{run.cid}/message/stream", json=body)
+
+    saved = storage.get_conversation(run.cid)["messages"][1]
+    events = [json.loads(line[6:]) for line in replay.text.splitlines() if line.startswith("data: ")]
+    replayed = next(event["data"] for event in events if event["type"] == "stage1_complete")
+    assert [row["model"] for row in saved["stage1"]] == [row["model"] for row in replayed] == [ALPHA, BETA]
