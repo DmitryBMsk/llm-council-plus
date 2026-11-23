@@ -1,7 +1,9 @@
 """The Stage 1 prompt of a council run is kept server-side so /retry-model can replay it."""
 
+import asyncio
 import base64
 import copy
+import json
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -165,6 +167,18 @@ def test_prompt_of_an_oversized_question_is_not_stored(run, endpoint):
 
 
 @pytest.mark.parametrize("endpoint", ENDPOINTS)
+def test_prompt_rendered_past_the_limit_is_not_stored(run, endpoint):
+    run.template = "{full_query}\n{full_query}"
+    document = {"filename": "half.txt", "file_type": "txt", "content": "x" * 300_000}
+
+    response = send(run, endpoint, attachments=[document])
+
+    assert response.status_code == 200, response.text
+    assert len(run.sent) == 1
+    assert "stage1_prompt" not in stored_metadata(run)
+
+
+@pytest.mark.parametrize("endpoint", ENDPOINTS)
 def test_stored_prompt_holds_no_image_data(run, endpoint):
     data = "data:image/png;base64," + base64.b64encode(b"IMAGE_BYTES_42").decode()
     image = {"filename": "photo.png", "file_type": "image", "content": data}
@@ -186,6 +200,57 @@ def test_interrupted_stream_keeps_the_prompt_with_its_partial_answers(run, monke
     response = send(run, "message/stream")
 
     assert response.status_code == 200
+    metadata = stored_metadata(run)
+    assert metadata["partial"] is True
+    assert metadata["stage1_prompt"]["text"] == "ORIGINAL TEMPLATE\nExplain the topic"
+
+
+def test_client_disconnect_during_stage2_keeps_the_prompt_with_its_partial_answers(run, monkeypatch):
+    async def stage2_hangs(*args, **kwargs):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr("backend.api.routes.conversations.stage2_collect_rankings", stage2_hangs)
+    run.cid = new_conversation("full")
+    body = json.dumps({"content": "Explain the topic", "request_id": str(uuid4())}).encode()
+    path = f"/api/conversations/{run.cid}/message/stream"
+    # ASGI before 2.4: Starlette cancels the response task when the client disconnects
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "client": ("testclient", 50000),
+        "server": ("testserver", 80),
+        "headers": [
+            (b"host", b"testserver"),
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode()),
+        ],
+    }
+
+    async def disconnect_once_stage2_starts():
+        stage2_started = asyncio.Event()
+        request = [{"type": "http.request", "body": body, "more_body": False}]
+
+        async def receive():
+            if request:
+                return request.pop()
+            await stage2_started.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(message):
+            if b"stage2_start" in message.get("body", b""):
+                stage2_started.set()
+
+        await asyncio.wait_for(app(scope, receive, send), timeout=10)
+
+    asyncio.run(disconnect_once_stage2_starts())
+
     metadata = stored_metadata(run)
     assert metadata["partial"] is True
     assert metadata["stage1_prompt"]["text"] == "ORIGINAL TEMPLATE\nExplain the topic"

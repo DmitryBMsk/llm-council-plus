@@ -59,7 +59,10 @@ def begin_stage1_prompt() -> Dict[str, Any]:
 
 def _keep_stage1_prompt(user_query: str, text: str, memory_context: Optional[str]) -> None:
     record = _stage1_prompt_var.get()
-    if record is not None and len(user_query) <= MAX_RERUN_QUESTION_CHARS:
+    # A template or memory can render past the question's size: bound what is stored too.
+    # An unstored prompt is retried by rebuilding it, never from a cut copy.
+    kept_size = len(text) + len(memory_context or "")
+    if record is not None and max(len(user_query), kept_size) <= MAX_RERUN_QUESTION_CHARS:
         record.update(text=text, memory_context=memory_context)
 
 

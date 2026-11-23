@@ -13,6 +13,8 @@ import asyncio
 import time
 import logging
 
+import anyio
+
 from ... import attachments as attachment_store
 from ... import storage
 from ... import config
@@ -953,13 +955,15 @@ async def send_message_stream(
                     **_kept_prompt(stage1_prompt),
                 }
                 try:
-                    await run_in_threadpool(storage.add_assistant_message,
-                        conversation_id,
-                        stage1_results,
-                        stage2_results,
-                        stage3_result,
-                        partial_metadata
-                    )
+                    # A client disconnect cancels this task: shield the write, or the answers are lost
+                    with anyio.CancelScope(shield=True):
+                        await run_in_threadpool(storage.add_assistant_message,
+                            conversation_id,
+                            stage1_results,
+                            stage2_results,
+                            stage3_result,
+                            partial_metadata
+                        )
                     logger.info("[STREAMING] Partial results saved successfully for conversation %s", conversation_id)
                 except Exception as save_error:
                     logger.error("[STREAMING] Failed to save partial results: %s", save_error)
