@@ -22,7 +22,8 @@ from ...council import (
     run_full_council, generate_conversation_title,
     stage1_collect_responses_streaming,
     stage2_collect_rankings, stage3_synthesize_final,
-    calculate_aggregate_rankings, reset_token_stats, get_token_stats
+    calculate_aggregate_rankings, reset_token_stats, get_token_stats,
+    begin_stage1_prompt,
 )
 from ...file_parser import parse_file, get_supported_extensions, is_image_file, PdfParseBusy, PdfParseLimit
 from ..deps import get_current_user, _ownership_username
@@ -45,6 +46,11 @@ MAX_ATTACHMENT_CONTENT_LENGTH = 128 + 4 * ((MAX_IMAGE_UPLOAD_SIZE + 2) // 3)
 
 async def _next_stage1_item(stage1_stream):
     return await stage1_stream.__anext__()
+
+
+def _kept_prompt(record):
+    """Metadata field for the stored message only: responses and SSE events never carry it."""
+    return {"stage1_prompt": record} if record else {}
 
 
 class CreateConversationRequest(BaseModel):
@@ -310,6 +316,10 @@ async def get_conversation(
     conversation = await run_in_threadpool(storage.get_conversation, conversation_id, username=_ownership_username(current_user))
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    for message in conversation["messages"]:
+        # The kept Stage 1 prompt is replay data for /retry-model, not for the browser
+        if "stage1_prompt" in (message.get("metadata") or {}):
+            message["metadata"] = {k: v for k, v in message["metadata"].items() if k != "stage1_prompt"}
     return conversation
 
 
@@ -515,6 +525,7 @@ async def send_message(
 
     # Run the 3-stage council process with full query including attachments
     images_for_council = image_attachments if image_attachments else None
+    stage1_prompt = begin_stage1_prompt()
     try:
         stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
             full_query,
@@ -540,7 +551,7 @@ async def send_message(
         stage1_results,
         stage2_results,
         stage3_result,
-        metadata
+        {**metadata, **_kept_prompt(stage1_prompt)}
     )
 
     # Return the complete response with metadata
@@ -609,6 +620,7 @@ async def send_message_stream(
         stage1_item_task = None
         stage2_task = None
         stage3_task = None
+        stage1_prompt = begin_stage1_prompt()  # filled by Stage 1, saved but never streamed
 
         def usage_if_final():
             # A title call still running adds usage after the save; it is stored once that call ends
@@ -724,6 +736,7 @@ async def send_message_stream(
                     "tool_outputs": tool_outputs,
                     "token_stats": token_stats,
                     **usage_if_final(),
+                    **_kept_prompt(stage1_prompt),
                 }
                 await run_in_threadpool(storage.add_assistant_message,
                     conversation_id,
@@ -793,6 +806,7 @@ async def send_message_stream(
                     "tool_outputs": tool_outputs,
                     "token_stats": token_stats,
                     **usage_if_final(),
+                    **_kept_prompt(stage1_prompt),
                 }
                 await run_in_threadpool(storage.add_assistant_message,
                     conversation_id,
@@ -852,7 +866,7 @@ async def send_message_stream(
             # This ensures the message is saved even if client disconnects during streaming
             # Previously, save was at the end of generator which never executed on disconnect
             metadata = {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings, 'tool_outputs': tool_outputs, 'token_stats': token_stats,
-                        **usage_if_final()}
+                        **usage_if_final(), **_kept_prompt(stage1_prompt)}
             await run_in_threadpool(storage.add_assistant_message,
                 conversation_id,
                 stage1_results,
@@ -935,7 +949,8 @@ async def send_message_stream(
                         'stage1': len(stage1_results) > 0,
                         'stage2': len(stage2_results) > 0,
                         'stage3': stage3_result is not None
-                    }
+                    },
+                    **_kept_prompt(stage1_prompt),
                 }
                 try:
                     await run_in_threadpool(storage.add_assistant_message,
