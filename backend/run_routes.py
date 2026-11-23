@@ -86,6 +86,10 @@ def managed_run(*, streaming=False):
             except ValueError as error:
                 raise HTTPException(422, str(error)) from error
             payload = request.model_dump(exclude={"request_id"})
+            if "chairman" in payload:
+                # The update below replaces a chairman chosen in the request with the
+                # conversation's: keep the choice in the digest, or it replays for another one
+                payload["requested_chairman"] = payload["chairman"]
             payload.update(
                 models=models,
                 router_type=(conversation or {}).get("router_type") or config.ROUTER_TYPE,
