@@ -185,7 +185,6 @@ def managed_run(*, streaming=False):
                 had_error = False
                 try:
                     async for chunk in response.body_iterator:
-                        await run_in_threadpool(ticket.ensure_active)
                         raw = chunk.decode() if isinstance(chunk, bytes) else chunk
                         for line in raw.splitlines():
                             if not line.startswith("data: "):
@@ -202,6 +201,9 @@ def managed_run(*, streaming=False):
                                 result["metadata"]["tool_outputs"] = event.get("data")
                             if kind == "token_stats":
                                 result["metadata"]["token_stats"] = event.get("data")
+                            # Checked after recording: the stream route has already stored this
+                            # event's answer, and a cancellation here must leave both records equal
+                            await run_in_threadpool(ticket.ensure_active)
                             if kind == "complete":
                                 result["metadata"].update(
                                     run_id=ticket.run_id,
