@@ -6,6 +6,7 @@ import logging
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
@@ -89,3 +90,40 @@ def test_exa_failure_text_is_not_returned_as_search_evidence(monkeypatch, caplog
 
     assert result == "Exa search error: search failed"
     assert "EXA_INTERNALS_55" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "adapter,message",
+    [
+        (openrouter, "Network error while talking to OpenRouter API"),
+        (ollama, "Network error while talking to Ollama"),
+    ],
+)
+def test_dropped_provider_connection_is_named_without_its_details(adapter, message, monkeypatch, caplog):
+    monkeypatch.setattr(config, "OPENROUTER_API_KEY", "sk-test-key", raising=False)
+    # A host with proxy credentials must not reach the browser-facing message
+    monkeypatch.setattr(config, "OLLAMA_HOST", "user:PROXY_SECRET@ollama.test:11434", raising=False)
+    client = AsyncMock()
+    client.post.side_effect = httpx.RemoteProtocolError("PEER_CLOSED_31")
+    client.__aenter__.return_value = client
+    monkeypatch.setattr(adapter.httpx, "AsyncClient", MagicMock(return_value=client))
+
+    with caplog.at_level(logging.ERROR):
+        result = asyncio.run(adapter.query_model("a/alpha", [{"role": "user", "content": "hi"}]))
+
+    assert (result["error_type"], result["error_message"]) == ("connection", message)
+    assert "PEER_CLOSED_31" in caplog.text
+
+
+@pytest.mark.parametrize("adapter", [openrouter, ollama])
+def test_provider_timeout_keeps_its_own_message(adapter, monkeypatch):
+    monkeypatch.setattr(config, "OPENROUTER_API_KEY", "sk-test-key", raising=False)
+    client = AsyncMock()
+    client.post.side_effect = httpx.ReadTimeout("SLOW_PROVIDER")  # a TransportError subclass too
+    client.__aenter__.return_value = client
+    monkeypatch.setattr(adapter.httpx, "AsyncClient", MagicMock(return_value=client))
+
+    result = asyncio.run(adapter.query_model("a/alpha", [{"role": "user", "content": "hi"}]))
+
+    assert result["error_type"] == "timeout"
+    assert result["error_message"].startswith("Request timed out after")
