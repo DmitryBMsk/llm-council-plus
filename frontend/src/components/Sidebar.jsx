@@ -114,8 +114,8 @@ export default function Sidebar({
     }
   };
 
-  // Close menu when clicking outside, and on Escape: the menu is portalled to <body>,
-  // so it would outlive the mobile drawer that Escape closes
+  // Close menu when clicking outside, on Escape and on resize: the menu is portalled to
+  // <body>, so it would outlive the mobile drawer that Escape or a narrower window hides
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (menuOpenId && !e.target.closest('.menu-dropdown-portal') && !e.target.closest('.menu-btn')) {
@@ -125,11 +125,14 @@ export default function Sidebar({
     const handleEscape = (e) => {
       if (e.key === 'Escape') setMenuOpenId(null);
     };
+    const handleResize = () => setMenuOpenId(null);
     document.addEventListener('click', handleClickOutside);
     document.addEventListener('keydown', handleEscape);
+    window.addEventListener('resize', handleResize);
     return () => {
       document.removeEventListener('click', handleClickOutside);
       document.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('resize', handleResize);
     };
   }, [menuOpenId]);
 
