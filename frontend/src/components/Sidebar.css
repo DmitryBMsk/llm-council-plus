@@ -9,6 +9,11 @@
   box-shadow: 4px 0 12px rgba(0, 0, 0, 0.3);
 }
 
+/* Focused from script when the mobile drawer opens; it is not a tab stop */
+.sidebar:focus {
+  outline: none;
+}
+
 .sidebar-header {
   padding: 20px 16px;
   border-bottom: 1px solid var(--border-primary);
@@ -644,4 +649,33 @@
 .meta-count,
 .meta-user {
   color: var(--text-tertiary);
+}
+
+/* Below 768 px the sidebar is an off-canvas drawer opened from the top bar */
+@media (max-width: 767px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 200; /* above the backdrop (150), below the modals (1000+) */
+    width: min(280px, 85vw);
+    height: auto;
+    transform: translateX(-100%);
+    visibility: hidden; /* keeps the closed drawer out of the tab order */
+    transition: transform 0.2s ease, visibility 0s 0.2s; /* hide after the slide-out */
+  }
+
+  .sidebar--open {
+    transform: none;
+    visibility: visible;
+    transition: transform 0.2s ease; /* visible at once, so it can take focus */
+  }
+}
+
+@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .sidebar--open {
+    transition: none;
+  }
 }

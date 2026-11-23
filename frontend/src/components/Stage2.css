@@ -450,3 +450,22 @@
   line-height: 1.5;
   max-width: 400px;
 }
+
+/* Below 768 px the model tabs scroll sideways instead of stacking into rows */
+@media (max-width: 767px) {
+  .stage2 .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .stage2 .tab {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .stage2 .stage-timing-top-right {
+    position: static;
+    margin-bottom: 12px;
+  }
+}

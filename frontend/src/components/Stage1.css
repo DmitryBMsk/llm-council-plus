@@ -346,3 +346,28 @@
   line-height: 1.5;
   max-width: 400px;
 }
+
+/* Below 768 px the model tabs scroll sideways instead of stacking into rows */
+@media (max-width: 767px) {
+  .tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .tab {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  /* Timing badges flow above the title instead of covering it */
+  .stage-timing-top-right {
+    position: static;
+    margin-bottom: 12px;
+  }
+
+  /* ModelSelector.css's global .model-name sets nowrap, which cuts the usage figures off */
+  .tab-content .model-name {
+    white-space: normal;
+  }
+}
