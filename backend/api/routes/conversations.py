@@ -719,8 +719,9 @@ async def send_message_stream(
                     else:
                         # Send individual model response event
                         model_time = time.time()
-                        yield f"data: {json.dumps({'type': 'stage1_model_response', 'data': item, 'timestamp': model_time})}\n\n"
+                        # Record before sending: a disconnect mid-send must not drop it from the partial save
                         stage1_results.append(item)
+                        yield f"data: {json.dumps({'type': 'stage1_model_response', 'data': item, 'timestamp': model_time})}\n\n"
             except ValueError as e:
                 # Configuration errors (e.g., no council models) - send error event and stop
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
