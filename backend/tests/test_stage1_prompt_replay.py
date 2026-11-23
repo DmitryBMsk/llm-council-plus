@@ -116,6 +116,12 @@ def test_rendered_prompt_is_stored_but_never_sent_to_the_browser(run, endpoint):
 @pytest.mark.parametrize("endpoint", ENDPOINTS)
 def test_retry_sends_the_original_prompt_after_the_template_and_memory_changed(run, monkeypatch, endpoint):
     monkeypatch.setattr(config, "ENABLE_MEMORY", True)
+    monkeypatch.setattr(council, "requires_tools", lambda query: True)
+
+    async def evidence(query, router_type=None):
+        return [{"tool": "search", "result": "STORED_EVIDENCE_55"}]
+
+    monkeypatch.setattr(council, "collect_auto_tools", evidence)
     assert send(run, endpoint).status_code == 200
     run.template = "CHANGED TEMPLATE {full_query}"
     run.memory = "NEWER_MEMORY_NOTE"
@@ -125,7 +131,9 @@ def test_retry_sends_the_original_prompt_after_the_template_and_memory_changed(r
 
     assert response.status_code == 200, response.text
     assert run.retried == run.sent
-    assert {"role": "system", "content": "Relevant past exchanges:\nMEMORY_NOTE_19"} in run.retried[0]
+    assert [m["role"] for m in run.retried[0]] == ["system", "system", "system", "user"]
+    assert run.retried[0][1] == {"role": "system", "content": "Relevant past exchanges:\nMEMORY_NOTE_19"}
+    assert "STORED_EVIDENCE_55" in run.retried[0][2]["content"]
     assert run.memory_reads == reads
 
 
