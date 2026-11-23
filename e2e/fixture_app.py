@@ -1,10 +1,13 @@
 """Local Ollama-compatible HTTP provider for browser E2E; never calls a real model."""
 import asyncio
+import re
 import time
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 calls = []
+failed_once = set()
 MODELS = ['e2e-alpha:latest', 'e2e-beta:latest', 'e2e-chair:latest']
 
 
@@ -29,6 +32,12 @@ async def chat(request: Request):
     # Let the browser exercise intermediate streaming state without arbitrary
     # waits in tests. Capture the full model request for follow-up assertions.
     await asyncio.sleep(0.05)
+    # The retry carries the same prompt as the failed request, so only state can tell them apart.
+    fail_once = re.search(r'__FAIL_ONCE_[0-9a-f]+__', text)
+    if (fail_once and payload['model'] == MODELS[0] and 'Generate a very short title' not in text
+            and fail_once.group() not in failed_once):
+        failed_once.add(fail_once.group())
+        return JSONResponse({'error': {'message': 'Fixture provider failure'}}, status_code=500)
     finish_reason = 'stop'
     if 'Generate a very short title' in text:
         answer = 'Local council result'
