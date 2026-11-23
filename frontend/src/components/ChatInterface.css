@@ -786,6 +786,11 @@
     padding: 16px 12px;
   }
 
+  /* The no-conversation welcome sits outside .messages-container and has no padding of its own */
+  .empty-state {
+    padding: 0 16px;
+  }
+
   .input-form {
     padding: 10px 12px;
   }

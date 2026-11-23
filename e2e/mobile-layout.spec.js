@@ -1,6 +1,15 @@
 const { test, expect } = require('@playwright/test');
 const apiBase = `http://localhost:${process.env.E2E_BACKEND_PORT || '18765'}`;
 
+// .app, .messages-container and .stage all clip their overflow, so scrollWidth checks pass
+// while content is cut off: list the descendants whose box leaves the viewport instead.
+// The tab strip, the judge matrix and code blocks are skipped: they scroll sideways by design.
+const cutOff = (page, selector) => page.locator(selector).evaluate(el =>
+  [...el.querySelectorAll('*')].filter(child => {
+    const box = child.getBoundingClientRect();
+    return box.width > 0 && !child.closest('.tabs, .judge-matrix, pre') && (box.right > window.innerWidth + 1 || box.left < -1);
+  }).map(child => `${child.tagName}.${child.className}`));
+
 // #57: below 768 px the sidebar is an off-canvas drawer and the composer wraps.
 test.describe('phone viewport', () => {
   test.use({ viewport: { width: 390, height: 844 } });
@@ -18,6 +27,7 @@ test.describe('phone viewport', () => {
       const toggle = page.getByRole('button', { name: 'Conversations', exact: true });
       await expect(sidebar).toBeHidden();
       await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(await cutOff(page, '.chat-interface'), 'empty state at 390px').toEqual([]);
 
       await toggle.click();
       await expect(sidebar).toBeInViewport({ ratio: 1 });
@@ -57,14 +67,20 @@ test.describe('phone viewport', () => {
         await expect(send).toBeInViewport({ ratio: 1 });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
           `page scrolls sideways at ${width}px`).toBe(true);
-        // .app and .messages-container clip their overflow, so the page-level check alone
-        // would pass with content cut off: measure the clipped boxes too.
-        for (const selector of ['.messages-container', '.input-form']) {
-          const [scrollWidth, clientWidth] = await page.locator(selector)
-            .evaluate(el => [el.scrollWidth, el.clientWidth]);
-          expect(scrollWidth, `${selector} overflows at ${width}px`).toBeLessThanOrEqual(clientWidth);
-        }
+        expect(await cutOff(page, '.chat-interface'), `answer and composer at ${width}px`).toEqual([]);
       }
+
+      // Narrower than the tabs: they stay on one row and nothing else is pushed out
+      await page.setViewportSize({ width: 320, height: 844 });
+      const tabRows = await page.locator('.stage1 .tab').evaluateAll(tabs =>
+        new Set(tabs.map(tab => Math.round(tab.getBoundingClientRect().top))).size);
+      expect(tabRows, 'Stage 1 tabs wrapped into several rows at 320px').toBe(1);
+      expect(await cutOff(page, '.chat-interface'), 'answer and composer at 320px').toEqual([]);
+
+      await page.setViewportSize({ width: 360, height: 844 });
+      await page.reload();
+      await expect(toggle).toBeVisible();
+      expect(await cutOff(page, '.chat-interface'), 'empty state at 360px').toEqual([]);
     } finally { await request.delete(`${apiBase}/api/conversations/${id}`).catch(() => {}); }
   });
 });

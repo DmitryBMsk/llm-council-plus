@@ -468,4 +468,10 @@
     position: static;
     margin-bottom: 12px;
   }
+
+  /* Position, model, average, votes and words do not fit one row on a phone */
+  .aggregate-item {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
 }
