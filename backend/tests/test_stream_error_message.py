@@ -96,12 +96,13 @@ def test_exa_failure_text_is_not_returned_as_search_evidence(monkeypatch, caplog
     "adapter,message",
     [
         (openrouter, "Network error while talking to OpenRouter API"),
-        (ollama, "Network error while talking to Ollama at ollama.test:11434"),
+        (ollama, "Network error while talking to Ollama"),
     ],
 )
 def test_dropped_provider_connection_is_named_without_its_details(adapter, message, monkeypatch, caplog):
     monkeypatch.setattr(config, "OPENROUTER_API_KEY", "sk-test-key", raising=False)
-    monkeypatch.setattr(config, "OLLAMA_HOST", "ollama.test:11434", raising=False)
+    # A host with proxy credentials must not reach the browser-facing message
+    monkeypatch.setattr(config, "OLLAMA_HOST", "user:PROXY_SECRET@ollama.test:11434", raising=False)
     client = AsyncMock()
     client.post.side_effect = httpx.RemoteProtocolError("PEER_CLOSED_31")
     client.__aenter__.return_value = client

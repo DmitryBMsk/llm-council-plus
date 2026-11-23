@@ -144,7 +144,8 @@ async def query_model(
         return {
             'error': True,
             'error_type': 'connection',
-            'error_message': f'Network error while talking to Ollama at {config.OLLAMA_HOST}'
+            # No host here: OLLAMA_HOST may carry proxy credentials (user:password@host)
+            'error_message': 'Network error while talking to Ollama'
         }
     except Exception as e:
         logger.error("Unexpected error querying model %s: %s: %s", model, type(e).__name__, e)
