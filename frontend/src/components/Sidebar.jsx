@@ -114,15 +114,23 @@ export default function Sidebar({
     }
   };
 
-  // Close menu when clicking outside
+  // Close menu when clicking outside, and on Escape: the menu is portalled to <body>,
+  // so it would outlive the mobile drawer that Escape closes
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (menuOpenId && !e.target.closest('.menu-dropdown-portal') && !e.target.closest('.menu-btn')) {
         setMenuOpenId(null);
       }
     };
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') setMenuOpenId(null);
+    };
     document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
   }, [menuOpenId]);
 
   const handleDeleteClick = async (id, e) => {

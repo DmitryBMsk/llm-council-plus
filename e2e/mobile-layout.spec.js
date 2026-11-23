@@ -27,6 +27,18 @@ test.describe('phone viewport', () => {
       await expect(toggle).toBeFocused();
 
       await toggle.click();
+      await page.locator('.sidebar-backdrop').click({ position: { x: 360, y: 400 } });
+      await expect(sidebar).toBeHidden();
+
+      // The 3-dot menu is portalled to <body>: Escape must not leave it over the chat
+      await toggle.click();
+      await page.locator('.menu-btn').first().click();
+      await expect(page.locator('.menu-dropdown-portal')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.locator('.menu-dropdown-portal')).toHaveCount(0);
+      await expect(sidebar).toBeHidden();
+
+      await toggle.click();
       await page.locator('.conversation-item').first().click();
       await expect(sidebar).toBeHidden();
 
