@@ -466,9 +466,9 @@ export default function ChatInterface({
                     </div>
                   )}
 
-                  {/* Real provider usage. Hidden while this message streams (only a streamed message
-                      has `loading`): its summary arrives with the complete event. */}
-                  {!(isLoading && msg.loading && index === conversation.messages.length - 1) && <RunUsage message={msg} />}
+                  {/* Real provider usage. Hidden while this message streams: only a streamed message
+                      has `loading`, and its summary arrives with the complete event. */}
+                  {!(isLoading && msg.loading && !msg.metadata?.provider_usage && index === conversation.messages.length - 1) && <RunUsage message={msg} />}
 
                   {/* Export buttons - show when stage3 is complete */}
                   {msg.stage3 && (

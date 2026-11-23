@@ -236,4 +236,10 @@ it('shows the run usage summary only once the message has stopped streaming', ()
 
   rerender(<ChatInterface conversation={conversation} />);
   expect(queryByRole('group', { name: 'Run usage' })).toHaveTextContent('Prompt tokens 20');
+
+  // A finished streamed message keeps its summary while a continuation request is busy
+  const provider_usage = { attempts: 1, totals: { prompt_tokens: 25 }, coverage: { prompt_tokens: 1 } };
+  const finished = { ...conversation, messages: [conversation.messages[0], { ...message, metadata: { provider_usage } }] };
+  rerender(<ChatInterface conversation={finished} isLoading />);
+  expect(queryByRole('group', { name: 'Run usage' })).toHaveTextContent('Prompt tokens 25');
 });
