@@ -94,5 +94,12 @@ def test_where_a_judge_puts_itself_does_not_change_its_own_average():
     assert first == last
 
 
+def test_a_label_that_matches_no_answer_does_not_take_a_position():
+    # The judge invents "Response C" in a two-answer council.
+    aggregate = _aggregate([_ranking("m1", "C", "A", "B")], {"Response A": "m1", "Response B": "m2"})
+
+    assert aggregate["m2"]["average_rank"] == 1.0
+
+
 def test_single_model_council_has_nothing_to_aggregate():
     assert council.calculate_aggregate_rankings([_ranking("m1", "A")], {"Response A": "m1"}) == []

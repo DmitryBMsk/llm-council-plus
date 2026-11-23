@@ -18,6 +18,15 @@ const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB for images
 
 const answeredCount = (stage1) => (stage1 || []).filter((r) => r.response?.trim()).length;
 
+// The aggregate is sorted best first; every model sharing the best average is top-ranked
+function topRanked(aggregate) {
+  if (!aggregate?.length) return '';
+  const best = aggregate
+    .filter((row) => row.average_rank === aggregate[0].average_rank)
+    .map((row) => row.model.split('/')[1] || row.model);
+  return ` · top-ranked: ${best.join(', ')}${best.length > 1 ? ' (tie)' : ''}`;
+}
+
 function formatFileSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -404,7 +413,7 @@ export default function ChatInterface({
                     <span className="council-process-meta">
                       {/* Failed models stay in stage1 as error rows; count answers, like the backend does */}
                       {answeredCount(msg.stage1)} response{answeredCount(msg.stage1) === 1 ? '' : 's'}
-                      {msg.metadata?.aggregate_rankings?.[0] && ` · top-ranked: ${msg.metadata.aggregate_rankings[0].model.split('/')[1] || msg.metadata.aggregate_rankings[0].model}`}
+                      {topRanked(msg.metadata?.aggregate_rankings)}
                     </span>
                   </summary>
 

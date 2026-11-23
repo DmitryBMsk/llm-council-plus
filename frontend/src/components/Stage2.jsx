@@ -151,7 +151,10 @@ const Stage2 = memo(function Stage2({ rankings, labelToModel, aggregateRankings,
           <div className="aggregate-list">
             {aggregateRankings.map((agg, index) => (
               <div key={index} className="aggregate-item">
-                <span className="rank-position">#{index + 1}</span>
+                {/* Equal averages share a position: with self-votes dropped, ties are common */}
+                <span className="rank-position">
+                  #{1 + aggregateRankings.filter((other) => other.average_rank < agg.average_rank).length}
+                </span>
                 <span className="rank-model">
                   {shortName(agg.model)}
                 </span>
@@ -198,6 +201,11 @@ const Stage2 = memo(function Stage2({ rankings, labelToModel, aggregateRankings,
             </div>
           )}
         </div>
+      )}
+
+      {/* A one-model council, or no parseable ranking: nothing was counted */}
+      {aggregateRankings?.length === 0 && rankings.some((ranking) => !ranking.error) && (
+        <p className="stage-description">No rankings from other models to aggregate.</p>
       )}
     </div>
   );

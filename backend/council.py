@@ -1269,17 +1269,16 @@ def calculate_aggregate_rankings(
         if not ranking_text:
             continue
 
-        # Parse the ranking from the structured format. A judge's vote for its own answer
-        # is dropped first, so the other answers are ranked 1..n-1 by that judge.
+        # Parse the ranking from the structured format. Labels that match no answer and the
+        # judge's vote for its own answer are dropped first, so neither takes a position:
+        # the other answers are ranked 1..n-1 by that judge.
         parsed_ranking = [
             label for label in parse_ranking_from_text(ranking_text)
-            if label_to_model.get(label) != ranking.get('model')
+            if label in label_to_model and label_to_model[label] != ranking.get('model')
         ]
 
         for position, label in enumerate(parsed_ranking, start=1):
-            if label in label_to_model:
-                model_name = label_to_model[label]
-                model_positions[model_name].append(position)
+            model_positions[label_to_model[label]].append(position)
 
     # Calculate average position for each model
     aggregate = []

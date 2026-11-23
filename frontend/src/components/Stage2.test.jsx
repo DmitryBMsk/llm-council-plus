@@ -45,6 +45,20 @@ describe('Stage2 aggregate without self-votes', () => {
     expect(item('gamma')).not.toHaveTextContent('words');
   });
 
+  it('gives answers with the same average the same position', () => {
+    render(<Stage2 rankings={rankings} labelToModel={labelToModel} responses={responses}
+      aggregateRankings={aggregate({ self_votes_excluded: true })} />);
+
+    const positions = [...document.querySelectorAll('.rank-position')].map((el) => el.textContent);
+    expect(positions).toEqual(['#1', '#1', '#3']);
+  });
+
+  it('says so when no votes from other models were counted', () => {
+    render(<Stage2 rankings={[rankings[0]]} labelToModel={{ 'Response A': 'org/alpha' }} aggregateRankings={[]} />);
+
+    expect(screen.getByText(/no rankings from other models to aggregate/i)).toBeInTheDocument();
+  });
+
   it('keeps aggregates stored before the change free of the new claims', () => {
     render(<Stage2 rankings={rankings} labelToModel={labelToModel} responses={responses}
       aggregateRankings={aggregate({})} />);
