@@ -905,10 +905,10 @@ async def send_message_stream(
             # This is the more common case for SSE client disconnection
             logger.info("[STREAMING] Client disconnected (GeneratorExit) during streaming for conversation %s", conversation_id)
             raise
-        except Exception as e:
-            logger.error("[STREAMING] Exception during streaming for conversation %s: %s: %s", conversation_id, type(e).__name__, str(e))
-            # Send error event
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+        except Exception:
+            logger.exception("[STREAMING] Exception during streaming for conversation %s", conversation_id)
+            # Exception text can hold SQL parameters (stored messages, prompts): it stays in the log
+            yield f"data: {json.dumps({'type': 'error', 'message': 'The council run failed. Please try again.'})}\n\n"
         except BaseException as e:
             # Catch ALL exceptions including SystemExit, KeyboardInterrupt, etc.
             # to understand what's causing the generator to stop

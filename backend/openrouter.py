@@ -233,7 +233,7 @@ async def query_model(
             return {
                 'error': True,
                 'error_type': 'unknown',
-                'error_message': str(e)
+                'error_message': 'Unexpected provider error'  # the exception text stays in the log
             }
         finally:
             record_usage('openrouter', model, attempt_usage, stage=stage, outcome=outcome)
@@ -420,7 +420,7 @@ async def query_models_with_stage_timeout(
                         results[model] = {
                             'error': True,
                             'error_type': 'unknown',
-                            'error_message': str(e)
+                            'error_message': 'Unexpected provider error'
                         }
 
                 if not done and not pending:
