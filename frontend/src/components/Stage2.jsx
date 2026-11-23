@@ -31,12 +31,30 @@ function deAnonymizeText(text, labelToModel) {
   return result;
 }
 
-const Stage2 = memo(function Stage2({ rankings, labelToModel, aggregateRankings, timings, onContinue, busy }) {
+const shortName = (model) => model.split('/')[1] || model;
+
+// The other models' answers in the order this judge ranked them, its own answer left out.
+// Mirrors calculate_aggregate_rankings in backend/council.py.
+function othersRanked(ranking, labelToModel) {
+  return (ranking.parsed_ranking || [])
+    .map((label) => labelToModel[label])
+    .filter((model) => model && model !== ranking.model);
+}
+
+const Stage2 = memo(function Stage2({ rankings, labelToModel, aggregateRankings, responses, timings, onContinue, busy }) {
   const [activeTab, setActiveTab] = useState(0);
 
   if (!rankings || rankings.length === 0) {
     return null;
   }
+
+  // Aggregates stored before self-votes were dropped lack the flag; make no claims about them
+  const selfVotesExcluded = aggregateRankings?.length > 0 && aggregateRankings.every((agg) => agg.self_votes_excluded);
+  const answerModels = Object.values(labelToModel || {});
+  const wordCount = (model) => {
+    const text = responses?.find((r) => r.model === model)?.response?.trim();
+    return text ? text.split(/\s+/).length : 0;
+  };
 
   // Clamp: activeTab state can outlive a rerender with fewer rankings
   const safeTab = Math.min(activeTab, rankings.length - 1);
@@ -127,14 +145,15 @@ const Stage2 = memo(function Stage2({ rankings, labelToModel, aggregateRankings,
         <div className="aggregate-rankings">
           <h4>Aggregate Rankings (Street Cred)</h4>
           <p className="stage-description">
-            Combined results across all peer evaluations (lower score is better):
+            Combined results across all peer evaluations (lower score is better)
+            {selfVotesExcluded ? '. A model\'s vote for its own answer is not counted.' : ':'}
           </p>
           <div className="aggregate-list">
             {aggregateRankings.map((agg, index) => (
               <div key={index} className="aggregate-item">
                 <span className="rank-position">#{index + 1}</span>
                 <span className="rank-model">
-                  {agg.model.split('/')[1] || agg.model}
+                  {shortName(agg.model)}
                 </span>
                 <span className="rank-score">
                   Avg: {agg.average_rank.toFixed(2)}
@@ -142,9 +161,42 @@ const Stage2 = memo(function Stage2({ rankings, labelToModel, aggregateRankings,
                 <span className="rank-count">
                   ({agg.rankings_count} votes)
                 </span>
+                {/* Length next to rank: long answers winning is the bias reported in #19 */}
+                {wordCount(agg.model) > 0 && (
+                  <span className="rank-count">{wordCount(agg.model)} words</span>
+                )}
               </div>
             ))}
           </div>
+
+          {selfVotesExcluded && labelToModel && (
+            <div className="judge-matrix">
+              <table>
+                <caption>Position each judge gave (own answer not counted)</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Judge</th>
+                    {answerModels.map((model) => <th key={model} scope="col">{shortName(model)}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rankings.map((ranking) => {
+                    const others = othersRanked(ranking, labelToModel);
+                    return (
+                      <tr key={ranking.model}>
+                        <th scope="row">{shortName(ranking.model)}</th>
+                        {answerModels.map((model) => (
+                          <td key={model}>
+                            {model === ranking.model ? 'own' : (others.indexOf(model) + 1 || '—')}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -170,8 +222,10 @@ Stage2.propTypes = {
       model: PropTypes.string.isRequired,
       average_rank: PropTypes.number.isRequired,
       rankings_count: PropTypes.number.isRequired,
+      self_votes_excluded: PropTypes.bool,
     })
   ),
+  responses: PropTypes.arrayOf(PropTypes.shape({ model: PropTypes.string, response: PropTypes.string })),
   timings: PropTypes.shape({
     start: PropTypes.number,
     end: PropTypes.number,

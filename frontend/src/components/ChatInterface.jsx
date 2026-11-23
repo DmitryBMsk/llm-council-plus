@@ -440,6 +440,7 @@ export default function ChatInterface({
                       rankings={msg.stage2}
                       labelToModel={msg.metadata?.label_to_model}
                       aggregateRankings={msg.metadata?.aggregate_rankings}
+                      responses={msg.stage1}
                       timings={msg.timings?.stage2}
                     />
                   )}

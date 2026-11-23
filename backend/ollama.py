@@ -229,7 +229,7 @@ async def query_models_streaming(
 
 async def query_models_with_stage_timeout(
     models: List[str],
-    messages: List[Dict[str, str]],
+    messages: List[Dict[str, str]] | Dict[str, List[Dict[str, str]]],
     stage: str = None,
     stage_timeout: float = 90.0,
     min_results: int = 3,
@@ -266,7 +266,9 @@ async def query_models_with_stage_timeout(
 
     # Create named tasks
     async def query_with_name(model: str):
-        response = await query_model(model, messages, temperature=temperature)
+        # messages may be keyed by model: Stage 2 sends each judge its own prompt
+        own_messages = messages[model] if isinstance(messages, dict) else messages
+        response = await query_model(model, own_messages, temperature=temperature)
         return (model, response)
 
     # Create ALL tasks at once

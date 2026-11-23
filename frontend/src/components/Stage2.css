@@ -344,6 +344,44 @@
   font-style: italic;
 }
 
+/* Judge x answer table under the aggregate list */
+.judge-matrix {
+  margin-top: 16px;
+  overflow-x: auto;
+}
+
+.judge-matrix table {
+  border-collapse: collapse;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+}
+
+.judge-matrix caption {
+  caption-side: top;
+  text-align: left;
+  padding-bottom: 8px;
+  color: var(--text-secondary);
+  font-family: inherit;
+}
+
+.judge-matrix th,
+.judge-matrix td {
+  padding: 6px 12px;
+  border: 1px solid var(--border-primary);
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.judge-matrix th {
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.judge-matrix th[scope="row"] {
+  text-align: left;
+}
+
 /* Error styles */
 .stage2 .tab.tab-error {
   background: rgba(248, 81, 73, 0.1);

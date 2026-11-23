@@ -129,7 +129,7 @@ async def query_models_streaming(
 async def query_models_with_stage_timeout(
     router_type: Optional[str],
     models: List[str],
-    messages: List[Dict[str, Any]],
+    messages: List[Dict[str, Any]] | Dict[str, List[Dict[str, Any]]],
     *,
     stage: str | None = None,
     stage_timeout: float = 90.0,
