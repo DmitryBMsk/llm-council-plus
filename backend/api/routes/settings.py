@@ -29,7 +29,7 @@ class UpdateRuntimeSettingsRequest(BaseModel):
     generation_limits: Optional[dict[GenerationStage, GenerationLimits]] = None
     model_generation_limits: Optional[dict[str, dict[GenerationStage, GenerationLimits]]] = None
 
-    web_search_provider: Optional[str] = Field(default=None, pattern="^(off|duckduckgo|tavily|exa|brave)$")
+    web_search_provider: Optional[str] = Field(default=None, pattern="^(off|duckduckgo|tavily|exa|brave|keenable)$")
     web_max_results: Optional[int] = Field(default=None, ge=1, le=10)
     web_full_content_results: Optional[int] = Field(default=None, ge=0, le=10)
 

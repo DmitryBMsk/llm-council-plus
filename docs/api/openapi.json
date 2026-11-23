@@ -554,7 +554,7 @@
           "web_search_provider": {
             "anyOf": [
               {
-                "pattern": "^(duckduckgo|tavily|exa|brave)$",
+                "pattern": "^(duckduckgo|tavily|exa|brave|keenable)$",
                 "type": "string"
               },
               {
@@ -634,6 +634,18 @@
               }
             ],
             "title": "Jwt Secret"
+          },
+          "keenable_api_key": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keenable Api Key"
           },
           "openrouter_api_key": {
             "anyOf": [
@@ -832,7 +844,7 @@
           "web_search_provider": {
             "anyOf": [
               {
-                "pattern": "^(off|duckduckgo|tavily|exa|brave)$",
+                "pattern": "^(off|duckduckgo|tavily|exa|brave|keenable)$",
                 "type": "string"
               },
               {

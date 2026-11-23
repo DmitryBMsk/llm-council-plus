@@ -87,6 +87,7 @@ class SetupConfigRequest(BaseModel):
     tavily_api_key: Optional[str] = Field(default=None, max_length=200)  # Optional: for web search
     exa_api_key: Optional[str] = Field(default=None, max_length=200)  # Optional: for AI-powered web search
     brave_api_key: Optional[str] = Field(default=None, max_length=200)  # Optional: for Brave search
+    keenable_api_key: Optional[str] = Field(default=None, max_length=200)  # Optional: for Keenable search
     # Authentication settings
     auth_enabled: Optional[bool] = Field(default=None)
     jwt_secret: Optional[str] = Field(default=None, min_length=32, max_length=100)
@@ -107,8 +108,9 @@ async def get_setup_status():
     tavily_enabled = config.ENABLE_TAVILY and bool(config.TAVILY_API_KEY)
     exa_enabled = config.ENABLE_EXA and bool(config.EXA_API_KEY)
     brave_enabled = config.ENABLE_BRAVE and bool(config.BRAVE_API_KEY)
+    keenable_enabled = config.ENABLE_KEENABLE and bool(config.KEENABLE_API_KEY)
     duckduckgo_enabled = duckduckgo_available()
-    web_search_enabled = tavily_enabled or exa_enabled or brave_enabled or duckduckgo_enabled
+    web_search_enabled = tavily_enabled or exa_enabled or brave_enabled or keenable_enabled or duckduckgo_enabled
 
     return {
         "setup_required": needs_setup,
@@ -119,6 +121,7 @@ async def get_setup_status():
         "tavily_enabled": tavily_enabled,
         "exa_enabled": exa_enabled,
         "brave_enabled": brave_enabled,
+        "keenable_enabled": keenable_enabled,
         "message": "OpenRouter API key required" if needs_setup else "Configuration OK"
     }
 
@@ -181,6 +184,9 @@ async def save_setup_config(request: SetupConfigRequest):
     if request.brave_api_key:
         updates["BRAVE_API_KEY"] = request.brave_api_key
         updates["ENABLE_BRAVE"] = "true"  # Auto-enable when key is provided
+    if request.keenable_api_key:
+        updates["KEENABLE_API_KEY"] = request.keenable_api_key
+        updates["ENABLE_KEENABLE"] = "true"  # Auto-enable when key is provided
     # Authentication settings
     if request.auth_enabled is not None:
         updates["AUTH_ENABLED"] = "true" if request.auth_enabled else "false"

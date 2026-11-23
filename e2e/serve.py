@@ -15,7 +15,7 @@ os.environ.update(preserved)
 os.environ.update(PYTHON_DOTENV_DISABLED='1', ROUTER_TYPE='ollama',
     OLLAMA_HOST=f'127.0.0.1:{provider_port}', AUTH_ENABLED='false',
     COUNCIL_MODELS='e2e-alpha:latest,e2e-beta:latest', CHAIRMAN_MODEL='e2e-chair:latest',
-    ENABLE_MEMORY='false', ENABLE_TAVILY='false', ENABLE_EXA='false', ENABLE_BRAVE='false',
+    ENABLE_MEMORY='false', ENABLE_TAVILY='false', ENABLE_EXA='false', ENABLE_BRAVE='false', ENABLE_KEENABLE='false',
     DATABASE_TYPE='json', LOG_LEVEL='WARNING', RUN_RATE_REQUESTS='200', OPENROUTER_API_KEY='e2e-no-secret',
     OPENROUTER_API_URL=f'http://127.0.0.1:{provider_port}/v1/chat/completions')
 sys.path.insert(0, str(ROOT))

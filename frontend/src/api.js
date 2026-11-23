@@ -372,7 +372,7 @@ export const api = {
    * @param {string} content - The message content
    * @param {function} onEvent - Callback function for each event: (eventType, data) => void
    * @param {Array} attachments - Optional array of file attachments
-   * @param {string} webSearchProvider - Web search provider: 'off', 'duckduckgo', 'tavily', 'exa', or 'brave'
+   * @param {string} webSearchProvider - Web search provider: 'off', 'duckduckgo', 'tavily', 'exa', 'brave', or 'keenable'
    * @param {Object} options - Optional fetch options (e.g., { signal })
    * @returns {Promise<void>}
    */

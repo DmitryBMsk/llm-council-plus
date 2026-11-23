@@ -40,6 +40,8 @@ HOT_RELOADABLE: frozenset[str] = frozenset({
     "exa_api_key",
     "enable_brave",
     "brave_api_key",
+    "enable_keenable",
+    "keenable_api_key",
     "enable_openai_embeddings",
     "openai_api_key",
     "enable_memory",
@@ -119,6 +121,8 @@ class AppSettings:
     exa_api_key: str = ""
     enable_brave: bool = False
     brave_api_key: str = ""
+    enable_keenable: bool = False
+    keenable_api_key: str = ""
 
     # Embeddings & features
     enable_openai_embeddings: bool = False
@@ -164,6 +168,8 @@ class AppSettings:
             exa_api_key=os.getenv("EXA_API_KEY", ""),
             enable_brave=_parse_bool(os.getenv("ENABLE_BRAVE", "false")),
             brave_api_key=os.getenv("BRAVE_API_KEY", ""),
+            enable_keenable=_parse_bool(os.getenv("ENABLE_KEENABLE", "false")),
+            keenable_api_key=os.getenv("KEENABLE_API_KEY", ""),
             enable_openai_embeddings=_parse_bool(os.getenv("ENABLE_OPENAI_EMBEDDINGS", "false")),
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
             enable_memory=_parse_bool(os.getenv("ENABLE_MEMORY", "true"), default=True),

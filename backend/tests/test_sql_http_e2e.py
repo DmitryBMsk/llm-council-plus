@@ -55,6 +55,7 @@ def test_live_sql_conversation_roundtrip(tmp_path):
         "ENABLE_EXA": "false",
         "ENABLE_TAVILY": "false",
         "ENABLE_BRAVE": "false",
+        "ENABLE_KEENABLE": "false",
         "RUN_CONTROL_DB": str(tmp_path / "runs.db"),
     }
     proc = subprocess.Popen(
