@@ -3,7 +3,7 @@
 
 import asyncio
 import json
-from unittest.mock import patch, AsyncMock
+from unittest.mock import ANY, patch, AsyncMock
 import pytest
 
 
@@ -173,7 +173,7 @@ async def test_stream_chat_only_skips_stage2_and_stage3():
         "execution_mode": "chat_only",
     }), patch.object(storage, "add_user_message"), patch.object(
         storage, "add_assistant_message", side_effect=track_save
-    ), patch.object(storage, "update_conversation_title"), patch(
+    ), patch.object(storage, "update_conversation_title"), patch.object(storage, "update_last_assistant_metadata"), patch(
         "backend.api.routes.conversations.generate_conversation_title", new=AsyncMock(return_value="Test Title")
     ), patch("backend.api.routes.conversations.stage1_collect_responses_streaming", mock_stage1_streaming), patch(
         "backend.api.routes.conversations.stage2_collect_rankings", stage2_should_not_run
@@ -239,7 +239,7 @@ async def test_stream_chat_only_emits_tool_outputs_token_stats_and_title_for_fir
         "execution_mode": "chat_only",
     }), patch.object(storage, "add_user_message"), patch.object(
         storage, "add_assistant_message", side_effect=track_save
-    ), patch.object(storage, "update_conversation_title"), patch(
+    ), patch.object(storage, "update_conversation_title"), patch.object(storage, "update_last_assistant_metadata"), patch(
         "backend.api.routes.conversations.generate_conversation_title", new=AsyncMock(return_value="Generated Title")
     ), patch("backend.api.routes.conversations.stage1_collect_responses_streaming", mock_stage1_streaming), patch(
         "backend.api.routes.conversations.stage2_collect_rankings", stage2_should_not_run
@@ -324,7 +324,7 @@ async def test_stream_chat_ranking_stops_after_stage2_with_heartbeat_and_metadat
         "execution_mode": "chat_ranking",
     }), patch.object(storage, "add_user_message"), patch.object(
         storage, "add_assistant_message", side_effect=track_save
-    ), patch.object(storage, "update_conversation_title"), patch(
+    ), patch.object(storage, "update_conversation_title"), patch.object(storage, "update_last_assistant_metadata"), patch(
         "backend.api.routes.conversations.stage1_collect_responses_streaming", mock_stage1_streaming
     ), patch("backend.api.routes.conversations.stage3_synthesize_final", stage3_should_not_run), patch(
         "backend.api.routes.conversations.calculate_aggregate_rankings", return_value=aggregate_rankings
@@ -370,6 +370,7 @@ async def test_stream_chat_ranking_stops_after_stage2_with_heartbeat_and_metadat
         "aggregate_rankings": aggregate_rankings,
         "tool_outputs": tool_outputs,
         "token_stats": token_stats,
+        "provider_usage": ANY,  # a follow-up has no title call, so the summary is saved with the message
     }
 
 
@@ -419,7 +420,7 @@ async def test_stream_full_mode_emits_stage3_heartbeat_and_stage3_complete():
         "execution_mode": "full",
     }), patch.object(storage, "add_user_message"), patch.object(
         storage, "add_assistant_message", side_effect=track_save
-    ), patch.object(storage, "update_conversation_title"), patch(
+    ), patch.object(storage, "update_conversation_title"), patch.object(storage, "update_last_assistant_metadata"), patch(
         "backend.api.routes.conversations.stage1_collect_responses_streaming", mock_stage1_streaming
     ), patch("backend.api.routes.conversations.calculate_aggregate_rankings", return_value=aggregate_rankings), patch(
         "backend.api.routes.conversations.get_token_stats", return_value=token_stats
@@ -462,6 +463,7 @@ async def test_stream_full_mode_emits_stage3_heartbeat_and_stage3_complete():
         "aggregate_rankings": aggregate_rankings,
         "tool_outputs": [],
         "token_stats": token_stats,
+        "provider_usage": ANY,
     }
 
 
@@ -533,7 +535,7 @@ async def test_full_mode_first_message_emits_title_complete():
         "execution_mode": "full",
     }), patch.object(storage, "add_user_message"), patch.object(
         storage, "add_assistant_message", side_effect=track_save
-    ), patch.object(storage, "update_conversation_title"), patch(
+    ), patch.object(storage, "update_conversation_title"), patch.object(storage, "update_last_assistant_metadata"), patch(
         "backend.api.routes.conversations.stage1_collect_responses_streaming", mock_stage1_streaming
     ), patch("backend.api.routes.conversations.calculate_aggregate_rankings", return_value=aggregate_rankings), patch(
         "backend.api.routes.conversations.get_token_stats", return_value=token_stats
