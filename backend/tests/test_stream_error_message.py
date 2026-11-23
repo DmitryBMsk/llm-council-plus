@@ -115,6 +115,30 @@ def test_dropped_provider_connection_is_named_without_its_details(adapter, messa
     assert "PEER_CLOSED_31" in caplog.text
 
 
+@pytest.mark.parametrize(
+    "host,shown",
+    [
+        ("user:PROXY_SECRET@ollama.test:11434", "ollama.test:11434"),
+        ("localhost:11434", "localhost:11434"),
+    ],
+)
+def test_ollama_connect_error_names_the_host_without_its_credentials(host, shown, monkeypatch, caplog):
+    monkeypatch.setattr(config, "OLLAMA_HOST", host, raising=False)
+    client = AsyncMock()
+    client.post.side_effect = httpx.ConnectError("CONNECT_REFUSED_12")
+    client.__aenter__.return_value = client
+    monkeypatch.setattr(ollama.httpx, "AsyncClient", MagicMock(return_value=client))
+
+    with caplog.at_level(logging.ERROR):
+        result = asyncio.run(ollama.query_model("a/alpha", [{"role": "user", "content": "hi"}]))
+
+    assert (result["error_type"], result["error_message"]) == (
+        "connection", f"Cannot connect to Ollama at {shown}. Is Ollama running?"
+    )
+    assert "CONNECT_REFUSED_12" in caplog.text
+    assert "PROXY_SECRET" not in caplog.text
+
+
 @pytest.mark.parametrize("adapter", [openrouter, ollama])
 def test_provider_timeout_keeps_its_own_message(adapter, monkeypatch):
     monkeypatch.setattr(config, "OPENROUTER_API_KEY", "sk-test-key", raising=False)

@@ -112,11 +112,12 @@ async def query_model(
         outcome = 'cancelled'
         raise
     except httpx.ConnectError as e:
-        logger.error("Connection error querying model %s: Cannot connect to Ollama at %s. Is Ollama running? Error: %s", model, config.OLLAMA_HOST, e)
+        host = config.OLLAMA_HOST.rpartition('@')[2]  # drop proxy credentials (user:password@host)
+        logger.error("Connection error querying model %s: Cannot connect to Ollama at %s. Is Ollama running? Error: %s", model, host, e)
         return {
             'error': True,
             'error_type': 'connection',
-            'error_message': f'Cannot connect to Ollama at {config.OLLAMA_HOST}. Is Ollama running?'
+            'error_message': f'Cannot connect to Ollama at {host}. Is Ollama running?'
         }
     except httpx.HTTPStatusError as e:
         logger.error("HTTP error querying model %s: Status %s. Response: %s", model, e.response.status_code, e.response.text)
