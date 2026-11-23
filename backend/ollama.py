@@ -139,6 +139,13 @@ async def query_model(
             'error_type': 'timeout',
             'error_message': f'Request timed out after {timeout}s'
         }
+    except httpx.TransportError as e:  # after TimeoutException, its subclass
+        logger.error("Network error querying model %s: %s: %s", model, type(e).__name__, e)
+        return {
+            'error': True,
+            'error_type': 'connection',
+            'error_message': f'Network error while talking to Ollama at {config.OLLAMA_HOST}'
+        }
     except Exception as e:
         logger.error("Unexpected error querying model %s: %s: %s", model, type(e).__name__, e)
         return {
