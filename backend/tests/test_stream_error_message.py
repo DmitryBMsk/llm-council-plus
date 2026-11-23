@@ -1,14 +1,16 @@
-"""An unexpected failure in /message/stream reaches the browser as a fixed message, never as exception text."""
+"""Unexpected failures reach the browser as fixed messages; exception text stays in the server log."""
 
+import asyncio
 import json
 import logging
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import OperationalError
 
-from backend import config, router_dispatch, storage
+from backend import config, ollama, openrouter, router_dispatch, storage, tools
 from backend.main import app
 
 
@@ -52,4 +54,38 @@ def test_database_error_text_stays_in_the_server_log(cid, monkeypatch, caplog):
     assert errors == ["The council run failed. Please try again."]
     assert "PRIVATE_PROMPT_88" not in response.text
     assert "UPDATE conversations" not in response.text
-    assert "PRIVATE_PROMPT_88" in caplog.text
+    logged = [r for r in caplog.records if "Exception during streaming" in r.getMessage()]
+    assert len(logged) == 1 and isinstance(logged[0].exc_info[1], OperationalError)
+
+
+@pytest.mark.parametrize("adapter", [openrouter, ollama])
+def test_unexpected_provider_error_text_stays_in_the_server_log(adapter, monkeypatch, caplog):
+    monkeypatch.setattr(config, "OPENROUTER_API_KEY", "sk-test-key", raising=False)
+    client = AsyncMock()
+    client.post.side_effect = RuntimeError("PROVIDER_INTERNALS_77")
+    client.__aenter__.return_value = client
+    monkeypatch.setattr(adapter.httpx, "AsyncClient", MagicMock(return_value=client))
+
+    with caplog.at_level(logging.ERROR):
+        result = asyncio.run(adapter.query_model("a/alpha", [{"role": "user", "content": "hi"}]))
+
+    assert result["error"] is True
+    assert result["error_message"] == "Unexpected provider error"
+    assert "PROVIDER_INTERNALS_77" in caplog.text
+
+
+def test_exa_failure_text_is_not_returned_as_search_evidence(monkeypatch, caplog):
+    class FailingExa:
+        def __init__(self, api_key):
+            pass
+
+        def search_and_contents(self, *args, **kwargs):
+            raise RuntimeError("EXA_INTERNALS_55")
+
+    monkeypatch.setattr(tools, "Exa", FailingExa)
+
+    with caplog.at_level(logging.ERROR):
+        result = tools.exa_tool("exa-test-key").func("latest news")
+
+    assert result == "Exa search error: search failed"
+    assert "EXA_INTERNALS_55" in caplog.text

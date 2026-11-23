@@ -324,7 +324,8 @@ def exa_tool(api_key: str) -> Tool:
             return "\n\n---\n\n".join(results)
         except Exception as e:
             logger.error(f"[Exa] Search error: {str(e)}")
-            return f"Exa search error: {str(e)}"
+            # Returned text reaches the browser and the council models: keep SDK details in the log
+            return "Exa search error: search failed"
 
     return Tool(
         name="exa_search",
