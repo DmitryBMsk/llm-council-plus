@@ -15,7 +15,8 @@ async def test_stage2_uses_runtime_prompt_template_and_temperature(monkeypatch):
 
     async def fake_query_models_with_stage_timeout(router_type, models, messages, **kwargs):
         # Capture the fully rendered prompt and the temperature passed down.
-        captured["prompt"] = messages[0]["content"]
+        # Stage 2 sends each judge its own prompt, keyed by model.
+        captured["prompt"] = messages[models[0]][0]["content"]
         captured["temperature"] = kwargs.get("temperature")
         return {models[0]: {"content": "FINAL RANKING:\n1. Response A"}}
 

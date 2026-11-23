@@ -2,6 +2,7 @@
 
 import re
 import json
+import random
 import asyncio
 import logging
 from .search_results import bounded_query, search_output, tool_context, MAX_QUERY_CHARS
@@ -867,6 +868,7 @@ async def stage2_collect_rankings(
     stage1_results: List[Dict[str, Any]],
     models: List[str] = None,
     router_type: Optional[str] = None,
+    rng: Optional[random.Random] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, str]]:
     """
     Stage 2: Each model ranks the anonymized responses.
@@ -875,6 +877,7 @@ async def stage2_collect_rankings(
         user_query: The original user query
         stage1_results: Results from Stage 1
         models: Optional list of model IDs to use (defaults to COUNCIL_MODELS)
+        rng: Source of the per-judge answer order (tests pass a seeded one)
 
     Returns:
         Tuple of (rankings list, label_to_model mapping)
@@ -910,25 +913,24 @@ async def stage2_collect_rankings(
         for label, result in zip(labels, valid_stage1)
     ]
 
-    # Format with TOON and track stats
-    responses_toon, _ = format_with_toon(responses_data, "stage2")
-
-    # For the prompt, use a readable format that includes TOON
-    responses_text = f"""The responses are provided in TOON (Token-Oriented Object Notation) format for efficiency:
-
-{responses_toon}"""
+    # Track TOON stats once; the per-judge prompts below differ only in order
+    format_with_toon(responses_data, "stage2")
 
     settings = runtime_settings.get_runtime_settings()
-    try:
-        ranking_prompt = settings.stage2_prompt_template.format(
-            user_query=user_query,
-            responses_text=responses_text,
-        )
-    except Exception as e:
-        logger.warning("[STAGE2] Failed formatting stage2_prompt_template: %s", e)
-        ranking_prompt = f"Question: {user_query}\n\n{responses_text}\n\nProvide your evaluation and ranking."
 
-    messages = [{"role": "user", "content": ranking_prompt}]
+    def ranking_messages(ordered_responses):
+        responses_text = f"""The responses are provided in TOON (Token-Oriented Object Notation) format for efficiency:
+
+{encode_for_llm(ordered_responses)}"""
+        try:
+            ranking_prompt = settings.stage2_prompt_template.format(
+                user_query=user_query,
+                responses_text=responses_text,
+            )
+        except Exception as e:
+            logger.warning("[STAGE2] Failed formatting stage2_prompt_template: %s", e)
+            ranking_prompt = f"Question: {user_query}\n\n{responses_text}\n\nProvide your evaluation and ranking."
+        return [{"role": "user", "content": ranking_prompt}]
 
     # OPTIMIZATION: Use only models that succeeded in Stage 1
     # This avoids rate limits - models that just responded are less likely to be rate-limited
@@ -950,6 +952,14 @@ async def stage2_collect_rankings(
     logger.debug("[STAGE2] ========== STAGE 2: COLLECT RANKINGS ==========")
     logger.debug("[STAGE2] Evaluating %d valid responses", len(valid_stage1))
     logger.debug("[STAGE2] Using %d models from Stage 1 successes: %s", len(council_models), council_models)
+
+    # Each judge gets the answers in its own random order, so a model's preference for a
+    # position does not push the same answer up for every judge. Labels stay tied to models.
+    rng = rng or random.Random()
+    messages = {
+        judge: ranking_messages(rng.sample(responses_data, k=len(responses_data)))
+        for judge in council_models
+    }
 
     # Get rankings from models with stage-level timeout
     # Uses first-N-complete pattern: proceeds after 90s if at least 3 models responded
@@ -1259,13 +1269,16 @@ def calculate_aggregate_rankings(
         if not ranking_text:
             continue
 
-        # Parse the ranking from the structured format
-        parsed_ranking = parse_ranking_from_text(ranking_text)
+        # Parse the ranking from the structured format. Labels that match no answer and the
+        # judge's vote for its own answer are dropped first, so neither takes a position:
+        # the other answers are ranked 1..n-1 by that judge.
+        parsed_ranking = [
+            label for label in parse_ranking_from_text(ranking_text)
+            if label in label_to_model and label_to_model[label] != ranking.get('model')
+        ]
 
         for position, label in enumerate(parsed_ranking, start=1):
-            if label in label_to_model:
-                model_name = label_to_model[label]
-                model_positions[model_name].append(position)
+            model_positions[label_to_model[label]].append(position)
 
     # Calculate average position for each model
     aggregate = []
@@ -1275,7 +1288,9 @@ def calculate_aggregate_rankings(
             aggregate.append({
                 "model": model,
                 "average_rank": round(avg_rank, 2),
-                "rankings_count": len(positions)
+                "rankings_count": len(positions),
+                # Tells the UI apart from aggregates stored before self-votes were dropped
+                "self_votes_excluded": True,
             })
 
     # Sort by average rank (lower is better)

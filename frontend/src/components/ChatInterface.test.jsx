@@ -149,6 +149,21 @@ describe('answer-first layout', () => {
     expect(getByText(/How the council decided/)).toHaveTextContent('1 response · top-ranked: beta');
   });
 
+  it('reports a tie instead of naming one top-ranked model', () => {
+    const { getByText } = renderMessage({
+      ...answered,
+      metadata: {
+        ...answered.metadata,
+        aggregate_rankings: [
+          { model: 'b/beta', average_rank: 1, rankings_count: 1 },
+          { model: 'a/alpha', average_rank: 1, rankings_count: 1 },
+        ],
+      },
+    });
+
+    expect(getByText(/How the council decided/)).toHaveTextContent('top-ranked: beta, alpha (tie)');
+  });
+
   it('keeps the stages expanded while there is no final answer', () => {
     const { getByText, queryByText } = renderMessage({ ...answered, stage3: null });
 
