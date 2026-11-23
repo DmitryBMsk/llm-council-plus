@@ -11,6 +11,7 @@ from starlette.concurrency import run_in_threadpool
 
 from ... import attachments, config, storage, router_dispatch, runtime_settings
 from ...council import (
+    MAX_RERUN_QUESTION_CHARS,
     _usage_fields,
     parse_ranking_from_text,
     build_context_prompt,
@@ -28,7 +29,6 @@ from .conversations import build_query_with_attachments
 router = APIRouter(tags=["conversations"])
 UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 _LIMIT_REASONS = {"length", "max_tokens", "max_output_tokens", "model_length"}
-MAX_RERUN_QUESTION_CHARS = 500_000  # same bound as the /continue context
 
 
 class ContinueResponseRequest(BaseModel):
@@ -330,14 +330,23 @@ async def retry_model(
     root_index, user_index, question = _original_run(conversation, request.message_index)
     router_type = conversation.get("router_type") or config.ROUTER_TYPE
     images = await _original_images(conversation, root_index, router_type)
-    # Same prompt as the original Stage 1, with the stored search evidence in place
-    # of a new search. Memory context is not re-read: it now holds this very exchange.
-    messages = build_multimodal_messages(
-        question, images or None, conversation["messages"][:user_index], router_type=router_type
-    )
-    evidence = (conversation["messages"][root_index].get("metadata") or {}).get("tool_outputs")
-    if evidence:
-        messages.insert(0, {"role": "system", "content": tool_context(evidence)})
+    root_metadata = conversation["messages"][root_index].get("metadata") or {}
+    # Same prompt as the original Stage 1, with the stored search evidence in place of a
+    # new search. Memory is never re-read: it now holds this very exchange.
+    kept = root_metadata.get("stage1_prompt")
+    if kept:
+        # The run kept its rendered prompt: replay it, whatever the template is now
+        messages = [
+            {"role": "user", "content": router_dispatch.build_message_content(router_type, kept["text"], images or None)}
+        ]
+    else:  # saved before prompts were kept, or the question was too long to keep
+        messages = build_multimodal_messages(
+            question, images or None, conversation["messages"][:user_index], router_type=router_type
+        )
+    if root_metadata.get("tool_outputs"):
+        messages.insert(0, {"role": "system", "content": tool_context(root_metadata["tool_outputs"])})
+    if kept and kept.get("memory_context"):
+        messages.insert(0, {"role": "system", "content": kept["memory_context"]})
     if conversation.get("system_prompt"):
         messages.insert(0, {"role": "system", "content": conversation["system_prompt"]})
     settings = await run_in_threadpool(runtime_settings.get_runtime_settings)

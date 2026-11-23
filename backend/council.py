@@ -43,6 +43,29 @@ def get_token_stats() -> Dict[str, Any]:
     return _token_stats_var.get().copy()
 
 
+# /retry-model rejects longer questions, so their Stage 1 prompt is not kept either
+MAX_RERUN_QUESTION_CHARS = 500_000
+_stage1_prompt_var: contextvars.ContextVar[Optional[Dict[str, Any]]] = contextvars.ContextVar(
+    'stage1_prompt', default=None
+)
+
+
+def begin_stage1_prompt() -> Dict[str, Any]:
+    """Start a request-scoped record that Stage 1 fills with the prompt /retry-model replays."""
+    record: Dict[str, Any] = {}
+    _stage1_prompt_var.set(record)
+    return record
+
+
+def _keep_stage1_prompt(user_query: str, text: str, memory_context: Optional[str]) -> None:
+    record = _stage1_prompt_var.get()
+    # A template or memory can render past the question's size: bound what is stored too.
+    # An unstored prompt is retried by rebuilding it, never from a cut copy.
+    kept_size = len(text) + len(memory_context or "")
+    if record is not None and max(len(user_query), kept_size) <= MAX_RERUN_QUESTION_CHARS:
+        record.update(text=text, memory_context=memory_context)
+
+
 def format_with_toon(data: List[Dict], stage_name: str) -> Tuple[str, Dict]:
     """
     Format data with TOON and track token savings.
@@ -240,7 +263,15 @@ def build_multimodal_messages(
     Returns:
         List of message dicts ready for OpenRouter API
     """
-    # Build the text prompt with context
+    # Build message content (text-only for Ollama, multimodal for OpenRouter).
+    text_prompt = render_stage1_prompt(user_query, conversation_history)
+    content = router_dispatch.build_message_content(router_type, text_prompt, images)
+
+    return [{"role": "user", "content": content}]
+
+
+def render_stage1_prompt(user_query: str, conversation_history: Optional[List[Dict[str, Any]]] = None) -> str:
+    """Stage 1 user prompt text: the history window, then the runtime template."""
     full_query = build_context_prompt(conversation_history or [], user_query)
 
     # Apply runtime Stage 1 prompt template (defaults to "{full_query}" which preserves
@@ -248,15 +279,10 @@ def build_multimodal_messages(
     settings = runtime_settings.get_runtime_settings()
     template = settings.stage1_prompt_template or "{full_query}"
     try:
-        text_prompt = template.format(user_query=user_query, full_query=full_query)
+        return template.format(user_query=user_query, full_query=full_query)
     except Exception as e:
         logger.warning("[STAGE1] Failed formatting stage1_prompt_template: %s", e)
-        text_prompt = full_query
-
-    # Build message content (text-only for Ollama, multimodal for OpenRouter).
-    content = router_dispatch.build_message_content(router_type, text_prompt, images)
-
-    return [{"role": "user", "content": content}]
+        return full_query
 
 
 # Tool detection helpers (Feature 4)
@@ -652,7 +678,8 @@ async def stage1_collect_responses(
         Tuple of (stage1_results, tool_outputs)
     """
     # Build messages with optional image support
-    messages = build_multimodal_messages(user_query, images, conversation_history, router_type=router_type)
+    text_prompt = render_stage1_prompt(user_query, conversation_history)
+    messages = [{"role": "user", "content": router_dispatch.build_message_content(router_type, text_prompt, images)}]
     settings = runtime_settings.get_runtime_settings()
 
     # Add tool context if the query suggests tool usage (Feature 4)
@@ -667,15 +694,18 @@ async def stage1_collect_responses(
             messages.insert(0, {"role": "system", "content": tool_text})
 
     # Add memory context if enabled (Feature 4)
+    memory_message = None
     if config.ENABLE_MEMORY and conversation_id:
         try:
             memory_ctx = await run_in_threadpool(
                 _read_memory_context, conversation_id, user_query
             )
             if memory_ctx:
-                messages.insert(0, {"role": "system", "content": f"Relevant past exchanges:\n{memory_ctx}"})
+                memory_message = f"Relevant past exchanges:\n{memory_ctx}"
+                messages.insert(0, {"role": "system", "content": memory_message})
         except Exception as e:
             logger.warning("Memory context retrieval failed: %s", e)
+    _keep_stage1_prompt(user_query, text_prompt, memory_message)
 
     # Inject custom system prompt as the first and highest-priority message.
     if system_prompt:
@@ -761,7 +791,8 @@ async def stage1_collect_responses_streaming(
         Dict with 'model', 'response', and optionally 'tool_outputs' keys
     """
     # Build messages with optional image support
-    messages = build_multimodal_messages(user_query, images, conversation_history, router_type=router_type)
+    text_prompt = render_stage1_prompt(user_query, conversation_history)
+    messages = [{"role": "user", "content": router_dispatch.build_message_content(router_type, text_prompt, images)}]
     settings = runtime_settings.get_runtime_settings()
 
     # Add tool context
@@ -804,15 +835,18 @@ async def stage1_collect_responses_streaming(
         logger.debug("[STAGE1-STREAM] Search context preview: %s...", tool_text[:500])
 
     # Add memory context if enabled (Feature 4)
+    memory_message = None
     if config.ENABLE_MEMORY and conversation_id:
         try:
             memory_ctx = await run_in_threadpool(
                 _read_memory_context, conversation_id, user_query
             )
             if memory_ctx:
-                messages.insert(0, {"role": "system", "content": f"Relevant past exchanges:\n{memory_ctx}"})
+                memory_message = f"Relevant past exchanges:\n{memory_ctx}"
+                messages.insert(0, {"role": "system", "content": memory_message})
         except Exception as e:
             logger.warning("Memory context retrieval failed (streaming): %s", e)
+    _keep_stage1_prompt(user_query, text_prompt, memory_message)
 
     # Inject custom system prompt as the FIRST system message
     if system_prompt:
