@@ -60,7 +60,8 @@ async def _replay(ticket):
     if ticket.status == "partial":
         yield _event({"type": "error", "message": "Recovered partial result; start a new request to continue."}, ticket)
     else:
-        yield _event({"type": "complete"}, ticket)
+        # As in a live run, the client reads the usage summary from this event
+        yield _event({"type": "complete", "metadata": result.get("metadata", {})}, ticket)
 
 
 def managed_run(*, streaming=False):

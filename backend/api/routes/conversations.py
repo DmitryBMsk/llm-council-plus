@@ -17,6 +17,7 @@ from ... import attachments as attachment_store
 from ... import storage
 from ... import config
 from ...run_routes import managed_run, validate_models
+from ...usage import get_provider_usage
 from ...council import (
     run_full_council, generate_conversation_title,
     stage1_collect_responses_streaming,
@@ -530,6 +531,9 @@ async def send_message(
         # Translate configuration errors (e.g., no council models) to 400
         raise HTTPException(status_code=400, detail=str(e))
 
+    # The title call ran before the council, so the usage summary is final here
+    metadata = {**metadata, "provider_usage": get_provider_usage()}
+
     # Add assistant message with all stages and metadata
     await run_in_threadpool(storage.add_assistant_message,
         conversation_id,
@@ -605,6 +609,14 @@ async def send_message_stream(
         stage1_item_task = None
         stage2_task = None
         stage3_task = None
+
+        def usage_if_final():
+            # A title call still running adds usage after the save; it is stored once that call ends
+            return {} if title_task else {"provider_usage": get_provider_usage()}
+
+        async def save_usage_after_title():
+            await run_in_threadpool(storage.update_last_assistant_metadata, conversation_id,
+                                    {"provider_usage": get_provider_usage()})
 
         try:
             # Reset token stats for this request
@@ -711,6 +723,7 @@ async def send_message_stream(
                     "execution_mode": execution_mode,
                     "tool_outputs": tool_outputs,
                     "token_stats": token_stats,
+                    **usage_if_final(),
                 }
                 await run_in_threadpool(storage.add_assistant_message,
                     conversation_id,
@@ -726,6 +739,7 @@ async def send_message_stream(
 
                 if title_task:
                     title = await title_task
+                    await save_usage_after_title()
                     await run_in_threadpool(storage.update_conversation_title, conversation_id, title, username=ownership)
                     yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
@@ -778,6 +792,7 @@ async def send_message_stream(
                     "aggregate_rankings": aggregate_rankings,
                     "tool_outputs": tool_outputs,
                     "token_stats": token_stats,
+                    **usage_if_final(),
                 }
                 await run_in_threadpool(storage.add_assistant_message,
                     conversation_id,
@@ -793,6 +808,7 @@ async def send_message_stream(
 
                 if title_task:
                     title = await title_task
+                    await save_usage_after_title()
                     await run_in_threadpool(storage.update_conversation_title, conversation_id, title, username=ownership)
                     yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 
@@ -835,7 +851,8 @@ async def send_message_stream(
             # CRITICAL FIX: Save assistant message IMMEDIATELY after stage3 completes
             # This ensures the message is saved even if client disconnects during streaming
             # Previously, save was at the end of generator which never executed on disconnect
-            metadata = {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings, 'tool_outputs': tool_outputs, 'token_stats': token_stats}
+            metadata = {'label_to_model': label_to_model, 'aggregate_rankings': aggregate_rankings, 'tool_outputs': tool_outputs, 'token_stats': token_stats,
+                        **usage_if_final()}
             await run_in_threadpool(storage.add_assistant_message,
                 conversation_id,
                 stage1_results,
@@ -854,6 +871,7 @@ async def send_message_stream(
             # Wait for title generation if it was started
             if title_task:
                 title = await title_task
+                await save_usage_after_title()
                 await run_in_threadpool(storage.update_conversation_title, conversation_id, title, username=ownership)
                 yield f"data: {json.dumps({'type': 'title_complete', 'data': {'title': title}})}\n\n"
 

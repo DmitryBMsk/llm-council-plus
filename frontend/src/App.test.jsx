@@ -330,3 +330,21 @@ it('retains a cancelled response and releases input across navigation', async ()
   await selectConversation('Conversation A', 'conv-a');
   expect(JSON.parse(screen.getByTestId('assistant-metadata').textContent)).toMatchObject({ aborted: true });
 });
+
+it('keeps the usage summary of the complete event on the finished message', async () => {
+  const stream = setupPendingStream();
+  await renderReadyApp();
+  await selectConversation('Conversation A', 'conv-a');
+  fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+  const provider_usage = { attempts: 3, totals: { prompt_tokens: 60 }, coverage: { prompt_tokens: 3 } };
+
+  await act(async () => {
+    stream.emit('stage1_start');
+    stream.emit('complete', { type: 'complete', metadata: { provider_usage } });
+    stream.resolve();
+    await Promise.resolve();
+  });
+
+  await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
+  expect(JSON.parse(screen.getByTestId('assistant-metadata').textContent)).toMatchObject({ provider_usage });
+});

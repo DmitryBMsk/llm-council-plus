@@ -1,4 +1,5 @@
 import TruncationNotice from './TruncationNotice';
+import { RowUsage } from './RunUsage';
 import { memo, useState } from 'react';
 import PropTypes from 'prop-types';
 import ReactMarkdown from 'react-markdown';
@@ -80,7 +81,7 @@ const Stage3 = memo(function Stage3({ finalResponse, timings, onContinue, busy }
         <div className="final-response">
           <div className="final-response-bar">
             <div className="chairman-label">
-              Chairman: {shortName(finalResponse.model)}
+              Chairman: {shortName(finalResponse.model)}<RowUsage usage={finalResponse.usage} />
             </div>
             {/* response is '' or null when the token budget went to reasoning */}
             {finalResponse.response?.trim() && (

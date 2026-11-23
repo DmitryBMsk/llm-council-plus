@@ -1,4 +1,5 @@
 import TruncationNotice from './TruncationNotice';
+import { RowUsage } from './RunUsage';
 import { useState, memo } from 'react';
 import PropTypes from 'prop-types';
 import ReactMarkdown from 'react-markdown';
@@ -72,7 +73,7 @@ const Stage1 = memo(function Stage1({ responses, timings, isStreaming, onContinu
       </div>
 
       <div className={`tab-content ${hasError ? 'tab-content-error' : ''}`}>
-        <div className="model-name">{currentResponse.model}</div>
+        <div className="model-name">{currentResponse.model}<RowUsage usage={currentResponse.usage} /></div>
         <TruncationNotice result={currentResponse} onContinue={onContinue} busy={busy} />
         {hasError ? (
           <div className="error-content">

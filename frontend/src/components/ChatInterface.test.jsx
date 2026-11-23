@@ -222,3 +222,24 @@ it('blocks Ollama images with an actionable warning before upload', async () => 
   expect(onUploadFile).not.toHaveBeenCalled();
   expect(addToast).toHaveBeenCalledWith(expect.stringContaining('OpenRouter'), 'warning');
 });
+
+it('shows the run usage summary only once the message has stopped streaming', () => {
+  const message = {
+    role: 'assistant',
+    stage1: [{ model: 'a/alpha', response: 'Draft', usage: { prompt_tokens: 20, completion_tokens: 10 } }],
+    metadata: {},
+    loading: { stage1: false, stage2: false, stage3: false }, // set on messages built from a stream
+  };
+  const conversation = { id: 'usage', messages: [{ role: 'user', content: 'Q' }, message] };
+  const { queryByRole, rerender } = render(<ChatInterface conversation={conversation} isLoading />);
+  expect(queryByRole('group', { name: 'Run usage' })).toBeNull();
+
+  rerender(<ChatInterface conversation={conversation} />);
+  expect(queryByRole('group', { name: 'Run usage' })).toHaveTextContent('Prompt tokens 20');
+
+  // A finished streamed message keeps its summary while a continuation request is busy
+  const provider_usage = { attempts: 1, totals: { prompt_tokens: 25 }, coverage: { prompt_tokens: 1 } };
+  const finished = { ...conversation, messages: [conversation.messages[0], { ...message, metadata: { provider_usage } }] };
+  rerender(<ChatInterface conversation={finished} isLoading />);
+  expect(queryByRole('group', { name: 'Run usage' })).toHaveTextContent('Prompt tokens 25');
+});

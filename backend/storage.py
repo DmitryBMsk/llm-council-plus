@@ -675,6 +675,25 @@ def add_assistant_message(
         _json_update_conversation(conversation_id, _update)
 
 
+def update_last_assistant_metadata(conversation_id: str, fields: Dict[str, Any]):
+    """Merge fields into the newest message's metadata, if the assistant wrote it.
+
+    For values known only after the message is saved, such as the usage of a
+    title call that is still running at that point.
+    """
+    def _update(conv: Dict[str, Any]) -> None:
+        ticket = active_ticket.get()
+        if ticket is not None:
+            ticket.ensure_active()
+        messages = conv.get("messages") or []
+        if messages and messages[-1].get("role") == "assistant":
+            messages[-1].setdefault("metadata", {}).update(fields)
+    if is_using_database():
+        _db_update_conversation(conversation_id, _update)
+    else:
+        _json_update_conversation(conversation_id, _update)
+
+
 def update_conversation_title(conversation_id: str, title: str, *, username: Optional[str] = None):
     """
     Update the title of a conversation.

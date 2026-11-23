@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
 import Stage1 from './Stage1';
 import Stage2 from './Stage2';
 import Stage3 from './Stage3';
-import TokenStats from './TokenStats';
+import RunUsage from './RunUsage';
 import SearchContext from './SearchContext';
 import { api } from '../api';
 import { exportToMarkdown, downloadMarkdown, generateFilename } from '../utils/exportMarkdown';
@@ -466,10 +466,9 @@ export default function ChatInterface({
                     </div>
                   )}
 
-                  {/* Token Stats - show TOON savings after Stage 3 */}
-                  {msg.stage3 && msg.metadata?.token_stats && (
-                    <TokenStats tokenStats={msg.metadata.token_stats} />
-                  )}
+                  {/* Real provider usage. Hidden while this message streams: only a streamed message
+                      has `loading`, and its summary arrives with the complete event. */}
+                  {!(isLoading && msg.loading && !msg.metadata?.provider_usage && index === conversation.messages.length - 1) && <RunUsage message={msg} />}
 
                   {/* Export buttons - show when stage3 is complete */}
                   {msg.stage3 && (

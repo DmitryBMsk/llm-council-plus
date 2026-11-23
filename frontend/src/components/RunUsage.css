@@ -1,0 +1,27 @@
+.run-usage {
+  margin: 12px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+.run-usage-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+}
+
+.run-usage-note {
+  margin-top: 4px;
+  color: var(--text-tertiary);
+}
+
+.row-usage {
+  margin-left: 12px;
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
