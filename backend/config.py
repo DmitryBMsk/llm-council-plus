@@ -81,6 +81,8 @@ ENABLE_EXA = os.getenv("ENABLE_EXA", "false").lower() == "true"
 EXA_API_KEY = os.getenv("EXA_API_KEY", "")
 ENABLE_BRAVE = os.getenv("ENABLE_BRAVE", "false").lower() == "true"
 BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")
+ENABLE_SPECSTREAM = os.getenv("ENABLE_SPECSTREAM", "false").lower() == "true"
+SPECSTREAM_API_KEY = os.getenv("SPECSTREAM_API_KEY", "")
 ENABLE_OPENAI_EMBEDDINGS = os.getenv("ENABLE_OPENAI_EMBEDDINGS", "false").lower() == "true"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ENABLE_MEMORY = os.getenv("ENABLE_MEMORY", "true").lower() == "true"
@@ -129,7 +131,7 @@ def reload_config():
     global ROUTER_TYPE, OPENROUTER_API_KEY, OPENROUTER_API_URL
     global OLLAMA_HOST, COUNCIL_MODELS, CHAIRMAN_MODEL
     global AUTH_ENABLED, JWT_SECRET, AUTH_USERS, ENABLE_TAVILY, TAVILY_API_KEY
-    global ENABLE_EXA, EXA_API_KEY, ENABLE_BRAVE, BRAVE_API_KEY
+    global ENABLE_EXA, EXA_API_KEY, ENABLE_BRAVE, BRAVE_API_KEY, ENABLE_SPECSTREAM, SPECSTREAM_API_KEY
     global ENABLE_OPENAI_EMBEDDINGS, OPENAI_API_KEY
     global ENABLE_MEMORY, ENABLE_LANGGRAPH
     global DATABASE_TYPE, POSTGRESQL_URL, MYSQL_URL
@@ -169,6 +171,8 @@ def reload_config():
     EXA_API_KEY = s.exa_api_key
     ENABLE_BRAVE = s.enable_brave
     BRAVE_API_KEY = s.brave_api_key
+    ENABLE_SPECSTREAM = s.enable_specstream
+    SPECSTREAM_API_KEY = s.specstream_api_key
     ENABLE_OPENAI_EMBEDDINGS = s.enable_openai_embeddings
     OPENAI_API_KEY = s.openai_api_key
     ENABLE_MEMORY = s.enable_memory

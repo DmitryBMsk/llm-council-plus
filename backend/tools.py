@@ -49,7 +49,7 @@ except ImportError:  # pragma: no cover
 
 # Note: PythonREPLTool removed for security - using safe AST-based calculator instead
 
-from .search_results import tavily_search
+from .search_results import tavily_search, specstream_search
 
 # Optional: Exa (paid, flag + key)
 try:
@@ -283,6 +283,15 @@ def tavily_tool(api_key: str) -> Tool:
     )
 
 
+def specstream_tool(api_key: str) -> Tool:
+    """SpecStream search (paid, requires key + flag)."""
+    return Tool(
+        name="specstream_search",
+        func=lambda query: specstream_search(query, api_key),
+        description="Advanced web search (paid) for richer current-event answers.",
+    )
+
+
 def exa_tool(api_key: str) -> Tool:
     """Exa AI search (paid, requires key + flag)."""
     if Exa is None:
@@ -354,6 +363,17 @@ def get_available_tools() -> List[Tool]:
     if enable_tavily and tavily_key:
         try:
             tools.append(tavily_tool(tavily_key))
+        except Exception:
+            # Fail silently here; downstream can log if desired
+            pass
+
+    # SpecStream (paid web search)
+    enable_specstream = os.getenv("ENABLE_SPECSTREAM", "false").lower() == "true"
+    specstream_key = os.getenv("SPECSTREAM_API_KEY")
+
+    if enable_specstream and specstream_key:
+        try:
+            tools.append(specstream_tool(specstream_key))
         except Exception:
             # Fail silently here; downstream can log if desired
             pass
