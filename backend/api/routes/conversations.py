@@ -18,7 +18,7 @@ import anyio
 from ... import attachments as attachment_store
 from ... import storage
 from ... import config
-from ...run_routes import managed_run, validate_models
+from ...run_routes import managed_run, scrub_stored_errors, validate_models
 from ...usage import get_provider_usage
 from ...council import (
     run_full_council, generate_conversation_title,
@@ -322,6 +322,7 @@ async def get_conversation(
         # The kept Stage 1 prompt is replay data for /retry-model, not for the browser
         if "stage1_prompt" in (message.get("metadata") or {}):
             message["metadata"] = {k: v for k, v in message["metadata"].items() if k != "stage1_prompt"}
+        scrub_stored_errors(message)
     return conversation
 
 
