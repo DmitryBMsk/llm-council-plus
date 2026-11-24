@@ -6,10 +6,12 @@ import logging
 import httpx
 
 import backend.main  # noqa: F401  (applies the app's logging setup)
-from backend import config, ollama
+from backend import config, ollama, runtime_settings
 
 
-def test_successful_ollama_call_keeps_proxy_credentials_out_of_the_log(monkeypatch, caplog):
+def test_successful_ollama_call_keeps_proxy_credentials_out_of_the_log(tmp_path, monkeypatch, caplog):
+    # Saved reasoning settings would stop query_model before it reaches httpx
+    monkeypatch.setattr(runtime_settings, "SETTINGS_FILE", tmp_path / "settings.json")
     monkeypatch.setattr(config, "OLLAMA_HOST", "PROXY_USER:PROXY_SECRET@ollama.test:11434", raising=False)
     dialed = []
 
