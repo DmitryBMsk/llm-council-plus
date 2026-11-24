@@ -118,7 +118,9 @@ def test_dropped_provider_connection_is_named_without_its_details(adapter, messa
 @pytest.mark.parametrize(
     "host,shown",
     [
-        ("user:PROXY_SECRET@ollama.test:11434", "ollama.test:11434"),
+        ("PROXY_USER:PROXY_SECRET@ollama.test:11434", "ollama.test:11434"),
+        ("PROXY_USER:PROXY_SECRET@127.0.0.1:11434/proxy@v2", "127.0.0.1:11434"),
+        ("[::1]:11434", "[::1]:11434"),
         ("localhost:11434", "localhost:11434"),
     ],
 )
@@ -135,8 +137,8 @@ def test_ollama_connect_error_names_the_host_without_its_credentials(host, shown
     assert (result["error_type"], result["error_message"]) == (
         "connection", f"Cannot connect to Ollama at {shown}. Is Ollama running?"
     )
-    assert "CONNECT_REFUSED_12" in caplog.text
-    assert "PROXY_SECRET" not in caplog.text
+    assert "CONNECT_REFUSED_12" in caplog.text and f"at {shown}." in caplog.text
+    assert "PROXY_USER" not in caplog.text and "PROXY_SECRET" not in caplog.text
 
 
 @pytest.mark.parametrize("adapter", [openrouter, ollama])

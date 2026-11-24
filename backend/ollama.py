@@ -112,7 +112,7 @@ async def query_model(
         outcome = 'cancelled'
         raise
     except httpx.ConnectError as e:
-        host = config.OLLAMA_HOST.rpartition('@')[2]  # drop proxy credentials (user:password@host)
+        host = httpx.URL(url).netloc.decode()  # host:port httpx dialed, without proxy credentials or path
         logger.error("Connection error querying model %s: Cannot connect to Ollama at %s. Is Ollama running? Error: %s", model, host, e)
         return {
             'error': True,
