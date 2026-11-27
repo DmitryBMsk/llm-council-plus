@@ -58,13 +58,12 @@ def _scrub_row(row):
         row["error_message"] = "Unexpected provider error"
     elif (row.get("error_type") == "connection" and isinstance(message, str)
           and message.startswith(_OLLAMA_PREFIX) and message.endswith(_OLLAMA_SUFFIX)):
-        # Stored before #73 with the whole OLLAMA_HOST: keep the host:port httpx dialed, as #73 does
+        # Stored before #73 with the whole OLLAMA_HOST: show only the host:port httpx dialed, as #73 does
         host = message[len(_OLLAMA_PREFIX):-len(_OLLAMA_SUFFIX)]
         try:
-            url = httpx.URL("http://" + host)
-            # An '@' httpx did not read as userinfo is an unescaped '/', '?' or '#' in the credentials,
-            # so the host and port it found may be part of them
-            shown = url.netloc.decode() if url.userinfo or "@" not in host else None
+            # With an '@', httpx cannot always tell the host from credentials holding '/', '?' or '#'
+            # ('user:a@b?c@host' reads host 'b'), so such rows name no host
+            shown = None if "@" in host else httpx.URL("http://" + host).netloc.decode()
         except (httpx.InvalidURL, ValueError):  # ValueError: a host httpx cannot encode, e.g. a non-ASCII IPv6 zone
             shown = None
         row["error_message"] = (

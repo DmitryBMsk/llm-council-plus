@@ -12,19 +12,22 @@ from backend.api.routes import conversations
 from backend.main import app
 
 # (error_type, message as stored before #67/#73, message shown now)
+NO_HOST = "Cannot connect to Ollama. Is Ollama running?"
 ROWS = [
     ("unknown", "RuntimeError: SDK_INTERNALS_74 calling https://api.example/v1", "Unexpected provider error"),
-    ("connection", "Cannot connect to Ollama at user:PROXY_SECRET@ollama.test:11434. Is Ollama running?",
-     "Cannot connect to Ollama at ollama.test:11434. Is Ollama running?"),
+    # An '@' may hide credentials httpx cannot tell from the host ('/', '?' or '#' in the password): no host
+    ("connection", "Cannot connect to Ollama at user:PROXY_SECRET@ollama.test:11434. Is Ollama running?", NO_HOST),
     ("connection", "Cannot connect to Ollama at user:PROXY_SECRET@127.0.0.1:11434/proxy@v2. Is Ollama running?",
-     "Cannot connect to Ollama at 127.0.0.1:11434. Is Ollama running?"),
-    ("connection", "Cannot connect to Ollama at user:PROXY_SECRET@ollama.test:port. Is Ollama running?",
-     "Cannot connect to Ollama. Is Ollama running?"),
-    # An unescaped '/' in the password: httpx reads 'PROXY_USER:4321' as the host and port
+     NO_HOST),
     ("connection", "Cannot connect to Ollama at PROXY_USER:4321/PROXY_SECRET@ollama.test:11434. Is Ollama running?",
-     "Cannot connect to Ollama. Is Ollama running?"),
-    ("connection", "Cannot connect to Ollama at [fe80::1%é]:11434. Is Ollama running?",
-     "Cannot connect to Ollama. Is Ollama running?"),
+     NO_HOST),
+    ("connection", "Cannot connect to Ollama at user:a@PROXY_SECRET?tail@ollama.test:11434. Is Ollama running?",
+     NO_HOST),
+    # Without credentials: the host and port httpx dialed, as #73 shows them
+    ("connection", "Cannot connect to Ollama at 127.0.0.1:11434/proxy. Is Ollama running?",
+     "Cannot connect to Ollama at 127.0.0.1:11434. Is Ollama running?"),
+    ("connection", "Cannot connect to Ollama at ollama.test:port. Is Ollama running?", NO_HOST),
+    ("connection", "Cannot connect to Ollama at [fe80::1%é]:11434. Is Ollama running?", NO_HOST),
     ("timeout", "Request timed out after 120s", "Request timed out after 120s"),
     ("connection", "Cannot connect to OpenRouter API", "Cannot connect to OpenRouter API"),
     ("unknown", "No response received", "No response received"),
