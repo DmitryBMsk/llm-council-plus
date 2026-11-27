@@ -61,9 +61,15 @@ def _scrub_row(row):
         # Stored before #73 with the whole OLLAMA_HOST: keep the host:port httpx dialed, as #73 does
         host = message[len(_OLLAMA_PREFIX):-len(_OLLAMA_SUFFIX)]
         try:
-            row["error_message"] = f"{_OLLAMA_PREFIX}{httpx.URL('http://' + host).netloc.decode()}{_OLLAMA_SUFFIX}"
-        except httpx.InvalidURL:
-            row["error_message"] = "Cannot connect to Ollama. Is Ollama running?"
+            url = httpx.URL("http://" + host)
+            # An '@' httpx did not read as userinfo is an unescaped '/', '?' or '#' in the credentials,
+            # so the host and port it found may be part of them
+            shown = url.netloc.decode() if url.userinfo or "@" not in host else None
+        except (httpx.InvalidURL, ValueError):  # ValueError: a host httpx cannot encode, e.g. a non-ASCII IPv6 zone
+            shown = None
+        row["error_message"] = (
+            f"{_OLLAMA_PREFIX}{shown}{_OLLAMA_SUFFIX}" if shown else "Cannot connect to Ollama. Is Ollama running?"
+        )
 
 
 def scrub_stored_errors(record):

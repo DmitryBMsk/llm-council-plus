@@ -20,13 +20,18 @@ ROWS = [
      "Cannot connect to Ollama at 127.0.0.1:11434. Is Ollama running?"),
     ("connection", "Cannot connect to Ollama at user:PROXY_SECRET@ollama.test:port. Is Ollama running?",
      "Cannot connect to Ollama. Is Ollama running?"),
+    # An unescaped '/' in the password: httpx reads 'PROXY_USER:4321' as the host and port
+    ("connection", "Cannot connect to Ollama at PROXY_USER:4321/PROXY_SECRET@ollama.test:11434. Is Ollama running?",
+     "Cannot connect to Ollama. Is Ollama running?"),
+    ("connection", "Cannot connect to Ollama at [fe80::1%é]:11434. Is Ollama running?",
+     "Cannot connect to Ollama. Is Ollama running?"),
     ("timeout", "Request timed out after 120s", "Request timed out after 120s"),
     ("connection", "Cannot connect to OpenRouter API", "Cannot connect to OpenRouter API"),
     ("unknown", "No response received", "No response received"),
 ]
 MODELS = ["ok"] + [f"m{i}" for i in range(len(ROWS))]
 SHOWN = {f"m{i}": shown for i, (_, _, shown) in enumerate(ROWS)}
-LEAKS = ("SDK_INTERNALS_74", "PROXY_SECRET")
+LEAKS = ("SDK_INTERNALS_74", "PROXY_SECRET", "PROXY_USER")
 
 
 def stored_rows():
