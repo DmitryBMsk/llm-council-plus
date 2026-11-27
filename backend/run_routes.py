@@ -6,6 +6,7 @@ from uuid import uuid4
 import json
 
 import anyio
+import httpx
 from fastapi import Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
@@ -44,6 +45,40 @@ def validate_models(models):
     ):
         raise ValueError(f"Models must be unique, nonempty and at most {config.MAX_COUNCIL_MODELS}")
     return models
+
+
+# Fixed texts an 'unknown' row still gets; any other text is exception text stored before #67
+_FIXED_UNKNOWN = ("Unexpected provider error", "No response received", "Unknown error")
+_OLLAMA_PREFIX, _OLLAMA_SUFFIX = "Cannot connect to Ollama at ", ". Is Ollama running?"
+
+
+def _scrub_row(row):
+    message = row.get("error_message")
+    if row.get("error_type") == "unknown" and message not in _FIXED_UNKNOWN:
+        row["error_message"] = "Unexpected provider error"
+    elif (row.get("error_type") == "connection" and isinstance(message, str)
+          and message.startswith(_OLLAMA_PREFIX) and message.endswith(_OLLAMA_SUFFIX)):
+        # Stored before #73 with the whole OLLAMA_HOST: show only the host:port httpx dialed, as #73 does
+        host = message[len(_OLLAMA_PREFIX):-len(_OLLAMA_SUFFIX)]
+        try:
+            # With an '@' or '%' (an encoded '@'), httpx cannot always tell the host from credentials
+            # ('user:a@b?c@host' reads host 'b'), so such rows name no host
+            shown = None if "@" in host or "%" in host else httpx.URL("http://" + host).netloc.decode()
+        except (httpx.InvalidURL, ValueError):  # ValueError: a host httpx cannot encode, e.g. a non-ASCII IPv6 zone
+            shown = None
+        row["error_message"] = (
+            f"{_OLLAMA_PREFIX}{shown}{_OLLAMA_SUFFIX}" if shown else "Cannot connect to Ollama. Is Ollama running?"
+        )
+
+
+def scrub_stored_errors(record):
+    """Clean provider error rows stored before #67 and #73 on their way out (#74); the store keeps them."""
+    for stage in ("stage1", "stage2"):
+        rows = record.get(stage)
+        for row in rows if isinstance(rows, list) else [rows]:  # stage2 is None in chat-only and rerun results
+            if isinstance(row, dict) and row.get("error"):
+                _scrub_row(row)
+    return record
 
 
 def _event(payload, ticket):
@@ -127,6 +162,7 @@ def managed_run(*, streaming=False):
                             "message": "Run completed but its result is not retained; no new work was started",
                         },
                     )
+                scrub_stored_errors(ticket.result)
                 return (
                     StreamingResponse(_replay(ticket), media_type="text/event-stream") if streaming else ticket.result
                 )
