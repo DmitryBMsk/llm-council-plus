@@ -15,7 +15,10 @@ from backend.main import app
 NO_HOST = "Cannot connect to Ollama. Is Ollama running?"
 ROWS = [
     ("unknown", "RuntimeError: SDK_INTERNALS_74 calling https://api.example/v1", "Unexpected provider error"),
-    # An '@' may hide credentials httpx cannot tell from the host ('/', '?' or '#' in the password): no host
+    # An '@' or '%' may hide credentials httpx cannot tell from the host ('/', '?' or '#' in the password,
+    # or the whole authority percent-encoded): no host
+    ("connection", "Cannot connect to Ollama at PROXY_USER%3APROXY_SECRET%40ollama.test:11434. Is Ollama running?",
+     NO_HOST),
     ("connection", "Cannot connect to Ollama at user:PROXY_SECRET@ollama.test:11434. Is Ollama running?", NO_HOST),
     ("connection", "Cannot connect to Ollama at user:PROXY_SECRET@127.0.0.1:11434/proxy@v2. Is Ollama running?",
      NO_HOST),

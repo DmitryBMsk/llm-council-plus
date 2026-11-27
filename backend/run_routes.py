@@ -61,9 +61,9 @@ def _scrub_row(row):
         # Stored before #73 with the whole OLLAMA_HOST: show only the host:port httpx dialed, as #73 does
         host = message[len(_OLLAMA_PREFIX):-len(_OLLAMA_SUFFIX)]
         try:
-            # With an '@', httpx cannot always tell the host from credentials holding '/', '?' or '#'
+            # With an '@' or '%' (an encoded '@'), httpx cannot always tell the host from credentials
             # ('user:a@b?c@host' reads host 'b'), so such rows name no host
-            shown = None if "@" in host else httpx.URL("http://" + host).netloc.decode()
+            shown = None if "@" in host or "%" in host else httpx.URL("http://" + host).netloc.decode()
         except (httpx.InvalidURL, ValueError):  # ValueError: a host httpx cannot encode, e.g. a non-ASCII IPv6 zone
             shown = None
         row["error_message"] = (
