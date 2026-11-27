@@ -260,6 +260,31 @@ def test_reasoning_only_continuation_retains_stage_task(context, stage, directiv
     assert "STORED_EVIDENCE_912" in str(prompt)
 
 
+@pytest.mark.parametrize("stage", ["stage2", "stage3"])
+def test_continuation_hides_stored_error_text_from_the_provider(context, stage):
+    # Error rows stored before #67/#73 (#74) must not reach the provider through the council context
+    client, cid, model, query = context
+    record = {"model": model, "truncated": True, "finish_reason": "length", "response": "Con"}
+    if stage == "stage2":
+        record = {"model": model, "truncated": True, "finish_reason": "length", "ranking": "Con", "parsed_ranking": []}
+    failed = {"model": "other/model", "error": True, "error_type": "unknown", "error_message": "SDK_INTERNALS_74"}
+    storage.add_assistant_message(
+        cid,
+        stage1=[{"model": model, "response": "Candidate answer"}, failed],
+        stage2=[record, failed] if stage == "stage2" else [failed],
+        stage3=record if stage == "stage3" else None,
+        metadata={"label_to_model": {"Response A": model}},
+    )
+    reply = client.post(
+        f"/api/conversations/{cid}/continue",
+        json={"message_index": 1, "stage": stage, "model": model, "request_id": str(uuid4())},
+    )
+    assert reply.status_code == 200, reply.text
+    prompt = str(query.call_args.kwargs["messages"])
+    assert "SDK_INTERNALS_74" not in prompt and "Unexpected provider error" in prompt
+    assert "SDK_INTERNALS_74" in str(storage.get_conversation(cid)["messages"][1])  # the store keeps it
+
+
 def test_continuation_excludes_legacy_search_error(context):
     client, cid, model, query = context
     storage.add_assistant_message(cid, [{'model': model, 'response': 'Con', 'truncated': True}],

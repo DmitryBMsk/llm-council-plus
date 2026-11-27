@@ -1,5 +1,6 @@
 """Explicit, single-model continuation. Never edits the original council result."""
 
+import copy
 import hashlib
 import json
 from types import SimpleNamespace
@@ -22,7 +23,7 @@ from ...council import (
 from ...search_results import tool_context
 from ...usage import get_provider_usage
 from ...run_context import active_ticket
-from ...run_routes import managed_run
+from ...run_routes import managed_run, scrub_stored_errors
 from ..deps import get_current_user, _ownership_username
 from .conversations import build_query_with_attachments
 
@@ -202,7 +203,10 @@ async def continue_response(
             if stage != request.stage and root_message.get(stage)
         }
         references["label_to_model"] = (root_message.get("metadata") or {}).get("label_to_model", {})
-        question += "\n\nOriginal council context:\n" + json.dumps(references, ensure_ascii=False)
+        # On a copy: the stored message keeps its rows (#74)
+        question += "\n\nOriginal council context:\n" + json.dumps(
+            scrub_stored_errors(copy.deepcopy(references)), ensure_ascii=False
+        )
     if len(question) + len(prefix) > 500_000:
         raise HTTPException(422, "Continuation context is too large; use a shorter focused follow-up")
     router_type = conversation.get("router_type") or config.ROUTER_TYPE
