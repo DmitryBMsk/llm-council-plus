@@ -118,7 +118,7 @@ class SendMessageRequest(BaseModel):
     attachments: Optional[List[FileAttachment]] = Field(default=None, max_length=5)  # Max 5 attachments
     temporary: Optional[bool] = False  # If True, don't save to storage (Feature 5)
     web_search: Optional[bool] = False  # DEPRECATED: use web_search_provider
-    web_search_provider: Optional[str] = Field(default=None, pattern="^(duckduckgo|tavily|exa|brave)$")
+    web_search_provider: Optional[str] = Field(default=None, pattern="^(duckduckgo|tavily|exa|brave|keenable)$")
 
     @field_validator('attachments')
     @classmethod

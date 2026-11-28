@@ -101,7 +101,7 @@ OLLAMA_HOST=localhost:11434
 
 The Free preset consumes an external ranked feed and falls back to available free-tier models when needed. Availability, provider rate limits and credits must be checked against the provider; a preset is not a capacity guarantee.
 
-Optional search is selected per message. DuckDuckGo requires no key; Tavily, Exa and Brave require their corresponding `ENABLE_*` flag and API key. Google Drive requires `GOOGLE_DRIVE_FOLDER_ID` and a readable service-account file. Finance and embeddings have optional dependency extras:
+Optional search is selected per message. DuckDuckGo requires no key; Tavily, Exa, Brave and Keenable require their corresponding `ENABLE_*` flag and API key. Keenable logs search requests on its default data policy, with or without a key ([data privacy](https://docs.keenable.ai/data-privacy)). Google Drive requires `GOOGLE_DRIVE_FOLDER_ID` and a readable service-account file. Finance and embeddings have optional dependency extras:
 
 ```bash
 # PostgreSQL driver; MySQL driver/RSA support is in the base dependencies.

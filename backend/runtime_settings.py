@@ -96,7 +96,7 @@ class RuntimeSettings(BaseModel):
     model_generation_limits: dict[str, dict[GenerationStage, GenerationLimits]] = Field(default_factory=dict)
 
     # Web search (non-secret). API keys stay in env / setup wizard.
-    web_search_provider: str = Field(default="duckduckgo")  # off | duckduckgo | tavily | exa | brave
+    web_search_provider: str = Field(default="duckduckgo")  # off | duckduckgo | tavily | exa | brave | keenable
     web_max_results: int = Field(default=5, ge=1, le=10)
     web_full_content_results: int = Field(default=0, ge=0, le=10)  # Jina Reader fetches for top N
 

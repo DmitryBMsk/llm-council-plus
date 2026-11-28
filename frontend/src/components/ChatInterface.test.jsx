@@ -304,3 +304,27 @@ it('shows the run usage summary only once the message has stopped streaming', ()
   rerender(<ChatInterface conversation={finished} isLoading />);
   expect(queryByRole('group', { name: 'Run usage' })).toHaveTextContent('Prompt tokens 25');
 });
+
+describe('web search provider select', () => {
+  function providerValues(props) {
+    const { container } = render(
+      <ChatInterface
+        conversation={{ id: 'provider-test', messages: [] }}
+        onSendMessage={vi.fn()}
+        onAbort={vi.fn()}
+        onUploadFile={vi.fn()}
+        isLoading={false}
+        addToast={vi.fn()}
+        webSearchAvailable
+        {...props}
+      />,
+    );
+    const select = container.querySelector('.search-provider-select');
+    return [...select.options].map((option) => option.value);
+  }
+
+  it('lists Keenable only when the backend reports it configured', () => {
+    expect(providerValues({ braveEnabled: true })).toEqual(['off', 'brave']);
+    expect(providerValues({ braveEnabled: true, keenableEnabled: true })).toEqual(['off', 'brave', 'keenable']);
+  });
+});

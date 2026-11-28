@@ -34,6 +34,9 @@ services:
       # Brave search (optional)
       - ENABLE_BRAVE=${ENABLE_BRAVE:-false}
       - BRAVE_API_KEY=${BRAVE_API_KEY}
+      # Keenable search (optional)
+      - ENABLE_KEENABLE=${ENABLE_KEENABLE:-false}
+      - KEENABLE_API_KEY=${KEENABLE_API_KEY}
     volumes:
       - ./data:/app/data
       - ./credentials:/app/credentials:ro

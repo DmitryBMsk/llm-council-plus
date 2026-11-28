@@ -93,13 +93,14 @@ export default function ChatInterface({
   exaEnabled = false,
   duckduckgoEnabled = false,
   braveEnabled = false,
+  keenableEnabled = false,
   addToast = () => {},
 }) {
   const [input, setInput] = useConversationState(conversation?.id, '');
   const [attachments, setAttachments] = useConversationState(conversation?.id, []);
   const [isUploading, setIsUploading] = useConversationState(conversation?.id, false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [webSearchProvider, setWebSearchProvider] = useConversationState(conversation?.id, 'off'); // 'off', 'duckduckgo', 'tavily', 'exa', 'brave'
+  const [webSearchProvider, setWebSearchProvider] = useConversationState(conversation?.id, 'off'); // 'off', 'duckduckgo', 'tavily', 'exa', 'brave', 'keenable'
   const [driveStatus, setDriveStatus] = useState({ enabled: false, configured: false });
   const [driveUploading, setDriveUploading] = useConversationState(conversation?.id, {});
   const [driveUploaded, setDriveUploaded] = useConversationState(conversation?.id, {});
@@ -671,6 +672,7 @@ export default function ChatInterface({
                   {tavilyEnabled && <option value="tavily">Tavily</option>}
                   {exaEnabled && <option value="exa">Exa AI</option>}
                   {braveEnabled && <option value="brave">Brave</option>}
+                  {keenableEnabled && <option value="keenable">Keenable</option>}
                 </select>
               </div>
             )}

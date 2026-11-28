@@ -479,6 +479,7 @@ async def run_web_search_direct(
     Supported providers:
     - duckduckgo (free, via ddgs; optional full content via Jina Reader)
     - brave (API key; optional full content via Jina Reader)
+    - keenable (API key; optional full content via Jina Reader)
     - tavily / exa (delegated to existing tools layer)
     """
     p = (provider or "").strip().lower()
@@ -783,7 +784,7 @@ async def stage1_collect_responses_streaming(
         models: Optional list of model IDs to use (defaults to COUNCIL_MODELS)
         images: Optional list of image attachments for multimodal queries
         conversation_id: Optional conversation ID for memory system
-        web_search_provider: Optional search provider ('duckduckgo', 'tavily', 'exa', 'brave') to force web search
+        web_search_provider: Optional search provider ('duckduckgo', 'tavily', 'exa', 'brave', 'keenable') to force web search
         chairman: Optional chairman model for search query optimization
         system_prompt: Optional custom system prompt for the conversation
 

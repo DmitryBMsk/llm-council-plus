@@ -8,6 +8,7 @@ export default function SetupWizard({ onComplete }) {
   const [tavilyKey, setTavilyKey] = useState('');
   const [exaKey, setExaKey] = useState('');
   const [braveKey, setBraveKey] = useState('');
+  const [keenableKey, setKeenableKey] = useState('');
   // Authentication state
   const [authEnabled, setAuthEnabled] = useState(false);
   const [jwtSecret, setJwtSecret] = useState('');
@@ -108,6 +109,10 @@ export default function SetupWizard({ onComplete }) {
       // Add Brave key if provided (optional)
       if (braveKey) {
         config.brave_api_key = braveKey;
+      }
+      // Add Keenable key if provided (optional)
+      if (keenableKey) {
+        config.keenable_api_key = keenableKey;
       }
       // Add auth config if enabled
       config.auth_enabled = authEnabled;
@@ -289,6 +294,28 @@ export default function SetupWizard({ onComplete }) {
             />
             <p className="form-hint">
               Enables Brave Search. Provide your Brave Search API key.
+            </p>
+          </div>
+
+          {/* Optional: Keenable API Key for Web Search */}
+          <div className="form-group">
+            <label htmlFor="keenableKey" className="form-label">
+              Keenable API Key <span className="optional-badge">Optional</span>
+            </label>
+            <input
+              id="keenableKey"
+              type="password"
+              value={keenableKey}
+              onChange={(e) => setKeenableKey(e.target.value)}
+              placeholder="..."
+              className="form-input"
+              disabled={isLoading}
+            />
+            <p className="form-hint">
+              Enables Keenable search. Get a key at{' '}
+              <a href="https://app.keenable.ai/console/api-keys" target="_blank" rel="noopener noreferrer">
+                app.keenable.ai
+              </a>
             </p>
           </div>
 

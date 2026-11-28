@@ -1,4 +1,4 @@
-"""Web search helpers (DuckDuckGo / Brave + full article fetch via Jina Reader).
+"""Web search helpers (DuckDuckGo / Brave / Keenable + full article fetch via Jina Reader).
 
 This module is intentionally:
 - Provider-agnostic (caller chooses provider; no implicit fallback).
@@ -26,11 +26,14 @@ class WebSearchProvider(str, Enum):
     BRAVE = "brave"
     TAVILY = "tavily"
     EXA = "exa"
+    KEENABLE = "keenable"
 
 
 SEARCH_TIMEOUT_BUDGET_S = 60.0
 DEFAULT_MAX_RESULTS = 5
 DEFAULT_FULL_CONTENT_RESULTS = 0
+KEENABLE_SEARCH_URL = "https://api.keenable.ai/v1/search"
+KEENABLE_MAX_RESULTS = 50  # API range for max_results is 1-50.
 
 
 async def _fetch_with_jina(url: str, timeout: float = 25.0) -> Optional[str]:
@@ -200,6 +203,75 @@ async def _search_brave(
     return "\n\n".join(formatted)
 
 
+async def _search_keenable(
+    query: str,
+    *,
+    max_results: int = DEFAULT_MAX_RESULTS,
+    full_content_results: int = DEFAULT_FULL_CONTENT_RESULTS,
+) -> str:
+    """Keenable Search API. Requires ENABLE_KEENABLE=true and KEENABLE_API_KEY."""
+    api_key = (config.KEENABLE_API_KEY or "").strip()
+    if not (config.ENABLE_KEENABLE and api_key):
+        return "[System Note: Keenable search is not configured. Set ENABLE_KEENABLE=true and KEENABLE_API_KEY.]"
+
+    start = time.time()
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            KEENABLE_SEARCH_URL,
+            json={
+                "query": query,
+                "max_results": max(1, min(max_results, KEENABLE_MAX_RESULTS)),
+                # Card results (cards.keenable.ai) expire after a day; keep citable pages only.
+                "disable_cards": True,
+            },
+            headers={"Accept": "application/json", "X-API-Key": api_key},
+        )
+    if resp.status_code != 200:
+        logger.warning("[WEB_SEARCH] Keenable returned %s: %s", resp.status_code, resp.text[:300])
+        return "[System Note: Keenable search failed. Please check your API key.]"
+
+    data = resp.json()
+    web_results = [r for r in (data.get("results") or []) if isinstance(r, dict) and r.get("url")]
+    if not web_results:
+        return "No web search results found."
+
+    normalized = []
+    for idx, r in enumerate(web_results[:max_results], 1):
+        normalized.append(
+            {
+                "index": idx,
+                "title": r.get("title") or "No Title",
+                "url": r["url"],
+                "summary": r.get("description") or r.get("snippet") or "No description available.",
+                "content": None,
+            }
+        )
+
+    for item in normalized[: max(0, full_content_results)]:
+        remaining = SEARCH_TIMEOUT_BUDGET_S - (time.time() - start)
+        if remaining <= 5:
+            break
+        content = await _fetch_with_jina(item["url"], timeout=min(25.0, remaining))
+        if content:
+            if len(content) < 500:
+                content += (
+                    "\n\n[System Note: Full content fetch yielded limited text. "
+                    "Appending original summary.]\n"
+                    f"Original Summary: {item['summary']}"
+                )
+            item["content"] = content
+
+    formatted = []
+    for r in normalized:
+        text = f"Result {r['index']}:\nTitle: {r['title']}\nURL: {r['url']}"
+        if r["content"]:
+            text += f"\nContent:\n{_truncate(r['content'], 2000)}"
+        else:
+            text += f"\nSummary: {_truncate(r['summary'], 800)}"
+        formatted.append(text)
+    return "\n\n".join(formatted)
+
+
 def duckduckgo_available() -> bool:
     try:
         import ddgs  # noqa: F401
@@ -223,6 +295,8 @@ async def perform_web_search(
         return await _search_duckduckgo(query, max_results=max_results, full_content_results=full_content_results)
     if p == WebSearchProvider.BRAVE.value:
         return await _search_brave(query, max_results=max_results, full_content_results=full_content_results)
+    if p == WebSearchProvider.KEENABLE.value:
+        return await _search_keenable(query, max_results=max_results, full_content_results=full_content_results)
     if p in (WebSearchProvider.TAVILY.value, WebSearchProvider.EXA.value):
         raise ValueError("tavily/exa are handled via existing tools layer")
     raise ValueError(f"Unknown web search provider: {provider}")

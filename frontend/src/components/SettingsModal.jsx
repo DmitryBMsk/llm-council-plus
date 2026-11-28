@@ -321,6 +321,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                   <option value="tavily">Tavily</option>
                   <option value="exa">Exa</option>
                   <option value="brave">Brave</option>
+                  <option value="keenable">Keenable</option>
                 </select>
               </div>
 
@@ -341,7 +342,7 @@ export default function SettingsModal({ isOpen, onClose }) {
                   Full Article Fetch (Jina Reader): <span className="settings-value">{Number(draft.web_full_content_results ?? 0)}</span>
                 </label>
                 <div className="settings-hint">
-                  Fetch full content for top N results when using DuckDuckGo/Brave. Set 0 to disable.
+                  Fetch full content for top N results when using DuckDuckGo/Brave/Keenable. Set 0 to disable.
                 </div>
                 <input disabled={!canEdit || isSaving}
                   type="range"

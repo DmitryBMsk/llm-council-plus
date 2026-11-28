@@ -81,6 +81,8 @@ ENABLE_EXA = os.getenv("ENABLE_EXA", "false").lower() == "true"
 EXA_API_KEY = os.getenv("EXA_API_KEY", "")
 ENABLE_BRAVE = os.getenv("ENABLE_BRAVE", "false").lower() == "true"
 BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")
+ENABLE_KEENABLE = os.getenv("ENABLE_KEENABLE", "false").lower() == "true"
+KEENABLE_API_KEY = os.getenv("KEENABLE_API_KEY", "")
 ENABLE_OPENAI_EMBEDDINGS = os.getenv("ENABLE_OPENAI_EMBEDDINGS", "false").lower() == "true"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ENABLE_MEMORY = os.getenv("ENABLE_MEMORY", "true").lower() == "true"
@@ -130,6 +132,7 @@ def reload_config():
     global OLLAMA_HOST, COUNCIL_MODELS, CHAIRMAN_MODEL
     global AUTH_ENABLED, JWT_SECRET, AUTH_USERS, ENABLE_TAVILY, TAVILY_API_KEY
     global ENABLE_EXA, EXA_API_KEY, ENABLE_BRAVE, BRAVE_API_KEY
+    global ENABLE_KEENABLE, KEENABLE_API_KEY
     global ENABLE_OPENAI_EMBEDDINGS, OPENAI_API_KEY
     global ENABLE_MEMORY, ENABLE_LANGGRAPH
     global DATABASE_TYPE, POSTGRESQL_URL, MYSQL_URL
@@ -169,6 +172,8 @@ def reload_config():
     EXA_API_KEY = s.exa_api_key
     ENABLE_BRAVE = s.enable_brave
     BRAVE_API_KEY = s.brave_api_key
+    ENABLE_KEENABLE = s.enable_keenable
+    KEENABLE_API_KEY = s.keenable_api_key
     ENABLE_OPENAI_EMBEDDINGS = s.enable_openai_embeddings
     OPENAI_API_KEY = s.openai_api_key
     ENABLE_MEMORY = s.enable_memory
